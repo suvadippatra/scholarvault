@@ -24,11 +24,10 @@ jobs:
           java-version: '17'
           cache: 'gradle'
 
-      - name: Make gradlew executable
+      - name: Ensure valid Gradle wrapper
         run: |
-          if [ ! -f gradlew ]; then
-            gradle wrapper
-          fi
+          rm -rf gradle/wrapper/
+          gradle wrapper
           chmod +x gradlew
 
       - name: Decode Keystore from Base64 Secret
