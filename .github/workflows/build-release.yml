@@ -25,7 +25,11 @@ jobs:
           cache: 'gradle'
 
       - name: Make gradlew executable
-        run: chmod +x gradlew
+        run: |
+          if [ ! -f gradlew ]; then
+            gradle wrapper
+          fi
+          chmod +x gradlew
 
       - name: Decode Keystore from Base64 Secret
         env:
@@ -33,7 +37,7 @@ jobs:
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
             # Decode the base64 keystore and place it in the root directory
-            echo $KEYSTORE_BASE64 | base64 --decode > my-upload-key.jks
+            echo "$KEYSTORE_BASE64" | base64 --decode --ignore-garbage > my-upload-key.jks
             echo "Keystore successfully decoded."
           else
             echo "KEYSTORE_BASE64 secret is missing. The build may fail if signing is required."
