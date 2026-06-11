@@ -1,0 +1,8 @@
+{
+  "name": "ScholarVault",
+  "description": "All-in-One Academic Companion for Students",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
