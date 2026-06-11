@@ -22,4 +22,8 @@
 # Prevent Room Entity columns from being minified
 -keep class com.example.data.model.** { *; }
 
+# Prevent R8 missing classes errors for external PDF library dependencies
+-dontwarn com.gemalto.jp2.**
+-dontwarn com.tom_roush.pdfbox.**
+
 
