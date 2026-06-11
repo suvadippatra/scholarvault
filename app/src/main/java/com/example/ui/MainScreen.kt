@@ -909,7 +909,7 @@ fun MainScreen(viewModel: AcademicViewModel, docViewModel: DocumentViewModel) {
                             navController.navigate(Screen.Documents.route)
                             scope.launch { docViewModel.triggerUploadChannel.send(Unit) }
                         },
-                        paddingBottom = 88.dp,
+                        paddingBottom = 98.dp,
                         isTablet = isTablet
                     )
                 }
@@ -1432,7 +1432,7 @@ fun TopLevelFab(isFabMenuOpen: Boolean, onToggleFabMenu: () -> Unit) {
 
     Box(
         modifier = Modifier
-            .padding(bottom = 80.dp - 19.dp)
+            .padding(bottom = 80.dp - 9.dp)
             .size(54.dp),
         contentAlignment = Alignment.Center
     ) {

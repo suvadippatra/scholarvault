@@ -74,7 +74,7 @@ object PageFlipGeometry {
             
         } else if (easedPageOffset > 0f && easedPageOffset <= 1f) {
             // Next page waiting underneath
-            transX = -easedPageOffset * screenWidth
+            transX = -pageOffset * screenWidth
             rotY = 0f
             a = 1f
             shadowAlpha = 0f

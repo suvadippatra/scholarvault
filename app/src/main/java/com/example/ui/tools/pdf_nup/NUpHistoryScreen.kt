@@ -19,7 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.scholarvault.ui.components.TopSearchBar
-import com.scholarvault.ui.pdf.v2.CustomPdfViewerV2
+import com.scholarvault.ui.pdf.v2.CustomPdfViewer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -126,7 +126,7 @@ fun NUpHistoryScreen(onNavigateBack: () -> Unit) {
     }
 
     if (previewUri != null) {
-        CustomPdfViewerV2(
+        CustomPdfViewer(
             filePath = previewUri.toString(),
             fileName = previewName,
             onBack = { previewUri = null },

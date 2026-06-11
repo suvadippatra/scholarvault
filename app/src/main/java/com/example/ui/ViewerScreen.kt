@@ -49,7 +49,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
-import com.scholarvault.ui.pdf.CustomPdfViewer
+import com.scholarvault.ui.pdf.v2.CustomPdfViewer
 import com.scholarvault.util.SecurityVault
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -95,19 +95,11 @@ fun ViewerScreen(
                         ).show()
                     }
                 }
-                if (pdfMode == "custom_v2") {
-                    com.scholarvault.ui.pdf.v2.CustomPdfViewerV2(filePath = filePath, fileName = fileName, onBack = onBack)
-                } else {
-                    CustomPdfViewer(filePath = filePath, fileName = fileName, onBack = onBack)
-                }
+                CustomPdfViewer(filePath = filePath, fileName = fileName, onBack = onBack)
             }
         }
         "pdf_external" -> {
-            if (pdfMode == "custom_v2") {
-                com.scholarvault.ui.pdf.v2.CustomPdfViewerV2(filePath = filePath, fileName = fileName, onBack = onBack, isExternalUri = true)
-            } else {
-                CustomPdfViewer(filePath = filePath, fileName = fileName, onBack = onBack, isExternalUri = true)
-            }
+            CustomPdfViewer(filePath = filePath, fileName = fileName, onBack = onBack, isExternalUri = true)
         }
         "image" -> ImageViewerScreen(filePath = filePath, fileName = fileName, onBack = onBack)
         "audio" -> AudioPlayerScreen(filePath = filePath, fileName = fileName, onBack = onBack)

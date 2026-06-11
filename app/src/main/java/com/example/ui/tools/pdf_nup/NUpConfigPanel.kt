@@ -125,7 +125,7 @@ fun NUpConfigPanel(
                 
                 // Item 3: Reading Order - styled with plenty of vertical height
                 ConfigCard(
-                    title = "Order",
+                    title = "",
                     modifier = Modifier.weight(1.3f)
                 ) {
                     Column(
@@ -578,7 +578,7 @@ fun ConfigControls(config: NUpConfig, onConfigChange: (NUpConfig) -> Unit, modif
     }
 
     // Reading Order
-    ConfigCard(title = "Order", modifier = modifier) {
+    ConfigCard(title = "", modifier = modifier) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -639,8 +639,10 @@ fun ConfigCard(title: String, modifier: Modifier = Modifier, content: @Composabl
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp)
         ) {
-            Text(title, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-            Spacer(modifier = Modifier.height(6.dp))
+            if (title.isNotEmpty()) {
+                Text(title, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Spacer(modifier = Modifier.height(6.dp))
+            }
             content()
         }
     }
