@@ -153,10 +153,10 @@ fun AdvancedImageResizerScreen(onBack: () -> Unit) {
             val inputBmp = item.croppedBitmap ?: item.origBitmap
             
             var processedBmp = inputBmp
-            val tempDisplayBmp = if (item.removeBackground) FloodFillBackgroundRemoval.removeBackground(inputBmp, item.bgTolerance, item.bgColor) else inputBmp
+            val tempDisplayBmp = if (item.removeBackground) FloodFillBackgroundRemoval.removeBackground(inputBmp, item.bgColor) else inputBmp
             
             val finalFile = FloodFillBackgroundRemoval.processImageFinal(
-                context, inputBmp, item.removeBackground, item.bgTolerance, item.bgColor,
+                context, inputBmp, item.removeBackground, item.bgColor,
                 targetW, targetH, targetDpi, targetKb, format, outName
             )
             
@@ -182,7 +182,7 @@ fun AdvancedImageResizerScreen(onBack: () -> Unit) {
             TopSearchBar(
                 onOpenDrawer = onBack,
                 isBackButton = true,
-                title = "Pro Image Editor",
+                title = "Advanced Image Resizer",
                 showProfileIcon = false,
                 showSearchBar = false,
                 actions = {
@@ -201,22 +201,23 @@ fun AdvancedImageResizerScreen(onBack: () -> Unit) {
             )
         }
     ) { padding ->
-        if (currentItem == null) {
-            Box(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxSize().padding(padding)) {
+            Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+                Spacer(Modifier.height(16.dp))
                 FileDropBox(
                     onUrisSelected = { uris ->
                         uris.firstOrNull()?.let { handleSelectedUri(it) }
                     },
-                    mimeType = "image/*"
+                    mimeType = "image/*",
+                    isCompact = currentItem != null
                 )
-            }
-        } else {
-            val item = currentItem!!
-            Box(Modifier.fillMaxSize().padding(padding)) {
-                Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-                    
-                    // Prefix buttons: always visible when editing
-                    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                Spacer(Modifier.height(16.dp))
+                if (currentItem != null) {
+                    val item = currentItem!!
+                    Column(modifier = Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
+                        
+                        // Prefix buttons: always visible when editing
+                        Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                         Button(onClick = { showCropDialog = true }, modifier = Modifier.weight(1f)) {
                             Icon(Icons.Default.Crop, "Crop", modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(4.dp))
@@ -273,12 +274,6 @@ fun AdvancedImageResizerScreen(onBack: () -> Unit) {
                                 Text("Remove & Replace Background", fontWeight = FontWeight.Bold)
                             }
                             if (item.removeBackground) {
-                                Text("Tolerance Slider (0 to 100):", fontSize = 12.sp)
-                                Slider(
-                                    value = item.bgTolerance,
-                                    onValueChange = { currentItem = item.copy(bgTolerance = it) },
-                                    valueRange = 0f..100f
-                                )
                                 Text("Background Color:", fontSize = 12.sp)
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 4.dp)) {
                                     CustomBgColor.values().forEach { bgConf ->
@@ -382,31 +377,32 @@ fun AdvancedImageResizerScreen(onBack: () -> Unit) {
                         }
                     }
                     Spacer(Modifier.height(40.dp))
+                } // End inner Column
+                
+                if (showCropDialog) {
+                    AdcancedCropDialog(
+                        bitmap = item.origBitmap,
+                        onDismiss = { showCropDialog = false },
+                        onCropped = { newBmp ->
+                            currentItem = item.copy(
+                                croppedBitmap = newBmp,
+                                targetWidth = newBmp.width.toString(),
+                                targetHeight = newBmp.height.toString()
+                            )
+                            showCropDialog = false
+                        }
+                    )
                 }
-            }
-            
-            if (showCropDialog) {
-                AdcancedCropDialog(
-                    bitmap = item.origBitmap,
-                    onDismiss = { showCropDialog = false },
-                    onCropped = { newBmp ->
-                        currentItem = item.copy(
-                            croppedBitmap = newBmp,
-                            targetWidth = newBmp.width.toString(),
-                            targetHeight = newBmp.height.toString()
-                        )
-                        showCropDialog = false
+                
+                if (isFullscreenPreview) {
+                    Box(modifier = Modifier.fillMaxSize().background(Color.Black).clickable { isFullscreenPreview = false }) {
+                        BitmapComparisonSlider(leftBitmap = item.croppedBitmap ?: item.origBitmap, rightBitmap = item.processedBitmap ?: (item.croppedBitmap ?: item.origBitmap))
+                        Text("Tap anywhere to close", color = Color.White, modifier = Modifier.align(Alignment.TopCenter).padding(32.dp))
                     }
-                )
-            }
-            
-            if (isFullscreenPreview) {
-                Box(modifier = Modifier.fillMaxSize().background(Color.Black).clickable { isFullscreenPreview = false }) {
-                    BitmapComparisonSlider(leftBitmap = item.croppedBitmap ?: item.origBitmap, rightBitmap = item.processedBitmap ?: (item.croppedBitmap ?: item.origBitmap))
-                    Text("Tap anywhere to close", color = Color.White, modifier = Modifier.align(Alignment.TopCenter).padding(32.dp))
                 }
-            }
-        }
+            } // End if (currentItem != null)
+        } // End outer Column
+    } // End Box
         
         if (showHelpDialog) {
             AlertDialog(
@@ -416,7 +412,7 @@ fun AdvancedImageResizerScreen(onBack: () -> Unit) {
                     Column(Modifier.verticalScroll(rememberScrollState())) {
                         Text("1. Crop: Frame the subject (face mostly) ensuring an even background, avoid stray hairs.", style = MaterialTheme.typography.bodyMedium)
                         Spacer(Modifier.height(8.dp))
-                        Text("2. Background Removal: Tweak the tolerance slider to eliminate background. Pick White, Blue, or Transparent.", style = MaterialTheme.typography.bodyMedium)
+                        Text("2. Background Removal: Automatically isolate the subject from its background using ML segmentation. Pick White, Blue, or Transparent.", style = MaterialTheme.typography.bodyMedium)
                         Spacer(Modifier.height(8.dp))
                         Text("3. Dimensions: Set exact pixels and DPI targets.", style = MaterialTheme.typography.bodyMedium)
                         Spacer(Modifier.height(8.dp))

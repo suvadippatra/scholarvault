@@ -190,7 +190,7 @@ fun DashboardScreen(
                 }
             } else {
                 item {
-                    GreetingSection(pureFirstName, nextReminder)
+                    GreetingSection(firstName = pureFirstName, nextReminder = nextReminder, onNavigate = onNavigate)
                 }
 
                 val prefs = context.getSharedPreferences("scanner_draft", android.content.Context.MODE_PRIVATE)
@@ -225,15 +225,36 @@ fun DashboardScreen(
                     }
                 }
 
-                item {
-                    QuoteCard(quote)
-                }
-                item {
-                    AcademicSummaryWidget(academicCount, walletCount)
-                }
-                if (weeklyActivity.isNotEmpty()) {
+                if (isTablet) {
                     item {
-                        WeeklyActivityWidget(weeklyActivity)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(24.dp)
+                        ) {
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+                                QuoteCard(quote)
+                                AcademicSummaryWidget(academicCount, walletCount)
+                            }
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+                                if (weeklyActivity.isNotEmpty()) {
+                                    WeeklyActivityWidget(weeklyActivity)
+                                } else {
+                                    Spacer(modifier = Modifier.height(1.dp))
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    item {
+                        QuoteCard(quote)
+                    }
+                    item {
+                        AcademicSummaryWidget(academicCount, walletCount)
+                    }
+                    if (weeklyActivity.isNotEmpty()) {
+                        item {
+                            WeeklyActivityWidget(weeklyActivity)
+                        }
                     }
                 }
                 if (isSimulatedLoading || recentDocuments.isNotEmpty() || recentNotes.isNotEmpty()) {
@@ -311,15 +332,17 @@ fun DashboardScreen(
 }
 
 @Composable
-fun GreetingSection(firstName: String, nextReminder: ReminderEntity? = null) {
+fun GreetingSection(firstName: String, nextReminder: ReminderEntity? = null, onNavigate: (String) -> Unit = {}) {
     val theme = LocalThemeController.current
     val isDark = theme.isDarkTheme
     val textColor = if (isDark) Color.White else Color.Black
-    val clockColor = if (isDark) Color(0xFFFF8A65) else Color(0xFFFF7043)
-    val dateColor = if (isDark) Color(0xFFFFCCBC) else Color(0xFFFFAB91)
+    val clockColor = Color(0xFFAEEA00) // Lime/yellow color "It's 11:25"
+    val dateColor = Color(0xFF26C6DA) // Teal color date
+    val cursiveColor = Color(0xFF42A5F5) // Blue cursive
     
     val dateFormatter = remember { SimpleDateFormat("EEEE, MMMM d, yyyy", Locale.getDefault()) }
-    val timeFormatter = remember { SimpleDateFormat("hh:mm a", Locale.getDefault()) }
+    val timeFormatterStr = remember { SimpleDateFormat("hh:mm", Locale.getDefault()) }
+    val amPmFormatter = remember { SimpleDateFormat("a", Locale.getDefault()) }
     
     var currentTime by remember { mutableStateOf(Date()) }
     
@@ -331,110 +354,83 @@ fun GreetingSection(firstName: String, nextReminder: ReminderEntity? = null) {
     }
     
     val dateStr = dateFormatter.format(currentTime)
-    val timeStr = timeFormatter.format(currentTime)
+    val timeStr = timeFormatterStr.format(currentTime)
+    val amPmStr = amPmFormatter.format(currentTime)
     
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
     val isTablet = configuration.screenWidthDp >= 840
 
-    if (isTablet) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(horizontalAlignment = Alignment.Start) {
-                if (nextReminder != null) {
-                    NextAlarmTicker(nextReminder)
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-                Text(
-                    text = "Hi $firstName!",
-                    fontSize = 32.sp,
-                    fontWeight = FontWeight.Normal,
-                    color = textColor
-                )
-                Text(
-                    text = "Good ${getGreetingTime()}",
-                    fontSize = 30.sp,
-                    fontFamily = FontFamily.Cursive,
-                    color = if (isDark) Color(0xFFAAAAAA) else Color.DarkGray
-                )
-            }
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = timeStr,
-                    fontSize = 32.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = clockColor
-                )
-                Text(
-                    text = dateStr,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = dateColor
-                )
-            }
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+        horizontalAlignment = Alignment.Start
+    ) {
+        if (nextReminder != null) {
+            NextAlarmTicker(nextReminder)
+            Spacer(modifier = Modifier.height(12.dp))
         }
-    } else {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-            horizontalAlignment = Alignment.Start
+        
+        Text(
+            text = "Hi $firstName !",
+            fontSize = if (isTablet) 32.sp else 24.sp,
+            fontWeight = FontWeight.Medium,
+            color = textColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 14.dp)
+        )
+        
+        Spacer(modifier = Modifier.height(10.dp))
+        
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top
         ) {
-            if (nextReminder != null) {
-                NextAlarmTicker(nextReminder)
-                Spacer(modifier = Modifier.height(6.dp))
-            }
+            Text(
+                text = "Good ${getGreetingTime().replace("..", "")}",
+                fontSize = if (isTablet) 32.sp else 26.sp,
+                fontFamily = FontFamily.Cursive,
+                color = cursiveColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 16.dp, top = 8.dp).weight(1f)
+            )
             
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                horizontalAlignment = Alignment.End,
+                modifier = Modifier.padding(top = 4.dp)
             ) {
-                Column(
-                    modifier = Modifier.weight(1.1f),
-                    horizontalAlignment = Alignment.Start
-                ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(end = 8.dp)) {
                     Text(
-                        text = "Hi $firstName!",
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = textColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "Good ${getGreetingTime()}",
-                        fontSize = 20.sp,
-                        fontFamily = FontFamily.Cursive,
-                        color = if (isDark) Color(0xFFAAAAAA) else Color.DarkGray,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                
-                Spacer(modifier = Modifier.width(8.dp))
-                
-                Column(
-                    modifier = Modifier.weight(0.9f),
-                    horizontalAlignment = Alignment.End
-                ) {
-                    Text(
-                        text = timeStr,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.ExtraBold,
+                        text = "It's",
+                        fontSize = 18.sp,
                         color = clockColor,
-                        maxLines = 1
+                        fontFamily = FontFamily.Cursive,
+                        modifier = Modifier.padding(bottom = 0.dp)
                     )
+                    Row(
+                        verticalAlignment = Alignment.Bottom,
+                        modifier = Modifier.clickable { onNavigate("fullscreen_clock") }
+                    ) {
+                        Text(
+                            text = timeStr,
+                            fontSize = 36.sp,
+                            fontWeight = FontWeight.Black,
+                            color = clockColor
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Column(modifier = Modifier.padding(bottom = 4.dp)) {
+                            Text(amPmStr.take(1), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = clockColor, lineHeight = 12.sp)
+                            Text(amPmStr.drop(1).take(1), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = clockColor, lineHeight = 12.sp)
+                        }
+                    }
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = dateStr,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
+                        fontSize = 15.sp,
                         color = dateColor,
-                        textAlign = TextAlign.End,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.clickable { onNavigate("calendar") }
                     )
                 }
             }

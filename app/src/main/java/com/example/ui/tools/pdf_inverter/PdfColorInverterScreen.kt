@@ -10,6 +10,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -98,7 +100,6 @@ fun PdfColorInverterScreen(
 
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
     val isLargeScreen = configuration.screenWidthDp >= 840
-    var showDropBox by remember { mutableStateOf(isLargeScreen) }
 
     if (previewUri != null) {
         Box(modifier = Modifier.fillMaxSize()) {
@@ -301,61 +302,40 @@ fun PdfColorInverterScreen(
             )
         },
         bottomBar = {
-            BottomAppBar(containerColor = MaterialTheme.colorScheme.background, contentPadding = PaddingValues(horizontal = 16.dp)) {
-                if (!isLargeScreen && !showDropBox) {
-                    AddFilesMenuButton(
-                        onDeviceClick = { filePicker.launch("application/pdf") },
-                        onUrisSelected = { uris -> 
-                            viewModel.addUris(
-                                uris = uris,
-                                onLimitExceeded = {
-                                    coroutineScope.launch {
-                                        snackbarHostState.showSnackbar("You can only add up to 20 PDFs at once.")
-                                    }
-                                },
-                                onWarning = {
-                                    coroutineScope.launch {
-                                        snackbarHostState.showSnackbar("Warning: Adding more than 5 PDFs might take a long time and use more resources.")
-                                    }
-                                }
-                            ) 
-                        },
-                        onLongPress = { showDropBox = true },
-                        label = "Add PDF"
-                    )
-                }
-                Spacer(Modifier.weight(1f))
-                
-                var expandedSaveMenu by remember { mutableStateOf(false) }
+            if (items.isNotEmpty() || processingState is PdfProcessingState.Processing) {
+                BottomAppBar(containerColor = MaterialTheme.colorScheme.background, contentPadding = PaddingValues(horizontal = 16.dp)) {
+                    Spacer(Modifier.weight(1f))
+                    var expandedSaveMenu by remember { mutableStateOf(false) }
 
-                Box {
-                    val isRunning = processingState is PdfProcessingState.Processing
-                    val btnContainerColor = if (isRunning) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer
-                    FloatingActionButton(
-                        onClick = {
-                            if (isRunning) {
-                                // Cancel
-                                androidx.work.WorkManager.getInstance(context).cancelUniqueWork("PdfInversionBatch")
-                                PdfProcessingRepository.updateState(PdfProcessingState.Idle)
-                            } else if (items.isNotEmpty()) {
-                                viewModel.processAll()
-                                coroutineScope.launch {
-                                    snackbarHostState.showSnackbar("Background processing started")
+                    Box {
+                        val isRunning = processingState is PdfProcessingState.Processing
+                        val btnContainerColor = if (isRunning) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer
+                        FloatingActionButton(
+                            onClick = {
+                                if (isRunning) {
+                                    // Cancel
+                                    androidx.work.WorkManager.getInstance(context).cancelUniqueWork("PdfInversionBatch")
+                                    PdfProcessingRepository.updateState(PdfProcessingState.Idle)
+                                } else if (items.isNotEmpty()) {
+                                    viewModel.processAll()
+                                    coroutineScope.launch {
+                                        snackbarHostState.showSnackbar("Background processing started")
+                                    }
                                 }
-                            }
-                        },
-                        containerColor = btnContainerColor,
-                        elevation = FloatingActionButtonDefaults.elevation(0.dp)
-                    ) {
-                        Row(modifier = Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            if (isRunning) {
-                                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onErrorContainer)
-                                Spacer(Modifier.width(8.dp))
-                                Text("Cancel", color = MaterialTheme.colorScheme.onErrorContainer)
-                            } else {
-                                Icon(Icons.Default.Check, "Process All")
-                                Spacer(Modifier.width(8.dp))
-                                Text("Process All")
+                            },
+                            containerColor = btnContainerColor,
+                            elevation = FloatingActionButtonDefaults.elevation(0.dp)
+                        ) {
+                            Row(modifier = Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                if (isRunning) {
+                                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onErrorContainer)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Cancel", color = MaterialTheme.colorScheme.onErrorContainer)
+                                } else {
+                                    Icon(Icons.Default.Check, "Process All")
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Process All")
+                                }
                             }
                         }
                     }
@@ -381,35 +361,43 @@ fun PdfColorInverterScreen(
                     }
                 }
             }
-            item {
-                if (showDropBox) {
-                    FileDropBox(
-                        onUrisSelected = { uris ->
-                            viewModel.addUris(
-                                uris = uris,
-                                onLimitExceeded = {
-                                    coroutineScope.launch {
-                                        snackbarHostState.showSnackbar("You can only add up to 20 PDFs at once.")
-                                    }
-                                },
-                                onWarning = {
-                                    coroutineScope.launch {
-                                        snackbarHostState.showSnackbar("Warning: Adding more than 5 PDFs might take a long time and use more resources.")
-                                    }
-                                }
-                            )
-                            showDropBox = isLargeScreen
-                        },
-                        onClose = { if (!isLargeScreen) showDropBox = false },
-                        mimeType = "application/pdf"
-                    )
-                    Spacer(Modifier.height(16.dp))
+            if (items.isEmpty() && processingState !is PdfProcessingState.Processing) {
+                item {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(top = 80.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(Icons.Default.AddCircle, contentDescription = null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.height(16.dp))
+                        Text("Add PDF documents to begin", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(8.dp))
+                        Text("You can import multiple files and invert colors effortlessly", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                        Spacer(Modifier.height(32.dp))
+                        Button(
+                            onClick = { filePicker.launch("application/pdf") },
+                            modifier = Modifier.height(56.dp).fillMaxWidth(0.8f)
+                        ) {
+                            Icon(Icons.Default.Add, null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Select PDF Files")
+                        }
+                    }
                 }
-                Text("Imported PDFs (${items.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(8.dp))
-            }
-            
-            items(items, key = { it.id }) { item ->
+            } else {
+                item {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text("Imported PDFs (${items.size})", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        TextButton(onClick = { filePicker.launch("application/pdf") }) {
+                            Icon(Icons.Default.Add, null)
+                            Spacer(Modifier.width(4.dp))
+                            Text("Add More")
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+                
+                items(items, key = { it.id }) { item ->
                 PdfItemCard(
                     item = item,
                     onRemove = { viewModel.removeItem(item.id) },
@@ -444,6 +432,7 @@ fun PdfColorInverterScreen(
                         com.scholarvault.ui.tools.SharedData.navigateToPrePrint.value = true
                     }
                 )
+            }
             }
         }
     }

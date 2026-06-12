@@ -199,7 +199,8 @@ fun ScannerRecentScreen(
                                     onClick = { handleScanClick(scan, onNavigateToViewer) },
                                     onUpdateScan = { updatedScan -> scannerViewModel.updateScan(updatedScan) },
                                     onDownload = { downloadScan(context, scan) },
-                                    onSaveToVault = { saveToVaultScan(context, coroutineScope, docViewModel, scan) }
+                                    onSaveToVault = { saveToVaultScan(context, coroutineScope, docViewModel, scan) },
+                                    onEditOriginal = { onNavigateToViewer("document_scanner_capture?scanId=${scan.id}") }
                                 )
                             }
                         }
@@ -240,7 +241,8 @@ fun ScannerRecentScreen(
                                     onClick = { handleScanClick(scan, onNavigateToViewer) },
                                     onUpdateScan = { updatedScan -> scannerViewModel.updateScan(updatedScan) },
                                     onDownload = { downloadScan(context, scan) },
-                                    onSaveToVault = { saveToVaultScan(context, coroutineScope, docViewModel, scan) }
+                                    onSaveToVault = { saveToVaultScan(context, coroutineScope, docViewModel, scan) },
+                                    onEditOriginal = { onNavigateToViewer("document_scanner_capture?scanId=${scan.id}") }
                                 )
                             }
                         }
@@ -372,7 +374,7 @@ private fun handleScanClick(scan: ScannedDocumentEntity, onNavigateToViewer: (St
                 val encodeName = android.util.Base64.encodeToString(scan.name.toByteArray(), android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP)
                 onNavigateToViewer("viewer/pdf/$encodePath/$encodeName")
             } else {
-                onNavigateToViewer("document_scanner_capture/${scan.id}")
+                onNavigateToViewer("document_scanner_capture?scanId=${scan.id}")
             }
         }
     } catch (e: Exception) {}
@@ -422,7 +424,8 @@ fun RecentScanCard(
     onClick: () -> Unit,
     onUpdateScan: (ScannedDocumentEntity) -> Unit,
     onDownload: () -> Unit,
-    onSaveToVault: () -> Unit
+    onSaveToVault: () -> Unit,
+    onEditOriginal: (() -> Unit)? = null
 ) {
     var expanded by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
@@ -482,10 +485,12 @@ fun RecentScanCard(
     }
 
     var isDraft = false
+    var hasOriginals = false
     try {
         val filePaths = org.json.JSONArray(scan.pagePaths)
         if (filePaths.length() > 0) {
             isDraft = !filePaths.getString(0).endsWith(".pdf", ignoreCase = true)
+            hasOriginals = !isDraft && filePaths.length() > 1
         }
     } catch(e: Exception){}
 
@@ -510,7 +515,7 @@ fun RecentScanCard(
                         IconButton(onClick = { expanded = true }, modifier = Modifier.size(24.dp)) {
                             Icon(androidx.compose.material.icons.Icons.Default.MoreVert, contentDescription = "More Options")
                         }
-                        ScanDropdownMenu(expanded, { expanded = false }, showRenameDialog = { showRenameDialog = true }, showTagsDialog = { showTagsDialog = true }, onShare, onSaveToVault, onDownload, onDelete, isDraft)
+                        ScanDropdownMenu(expanded, { expanded = false }, showRenameDialog = { showRenameDialog = true }, showTagsDialog = { showTagsDialog = true }, onShare, onSaveToVault, onDownload, onDelete, isDraft, hasOriginals, onEditOriginal)
                     }
                 }
                 Spacer(modifier = Modifier.height(16.dp))
@@ -579,7 +584,7 @@ fun RecentScanCard(
                     IconButton(onClick = { expanded = true }) {
                         Icon(androidx.compose.material.icons.Icons.Default.MoreVert, contentDescription = "More Options")
                     }
-                    ScanDropdownMenu(expanded, { expanded = false }, showRenameDialog = { showRenameDialog = true }, showTagsDialog = { showTagsDialog = true }, onShare, onSaveToVault, onDownload, onDelete, isDraft)
+                    ScanDropdownMenu(expanded, { expanded = false }, showRenameDialog = { showRenameDialog = true }, showTagsDialog = { showTagsDialog = true }, onShare, onSaveToVault, onDownload, onDelete, isDraft, hasOriginals, onEditOriginal)
                 }
             }
         }
@@ -596,12 +601,24 @@ private fun ScanDropdownMenu(
     onSaveToVault: () -> Unit,
     onDownload: () -> Unit,
     onDelete: () -> Unit,
-    isDraft: Boolean
+    isDraft: Boolean,
+    hasOriginals: Boolean = false,
+    onEditOriginal: (() -> Unit)? = null
 ) {
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest
     ) {
+        if (hasOriginals && onEditOriginal != null) {
+            DropdownMenuItem(
+                text = { Text("Edit Original Sources") },
+                onClick = {
+                    onDismissRequest()
+                    onEditOriginal()
+                },
+                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
+            )
+        }
         DropdownMenuItem(
             text = { Text("Rename") },
             onClick = { onDismissRequest(); showRenameDialog() },

@@ -12,7 +12,6 @@ data class AdvancedImageItem(
     
     // Config
     var removeBackground: Boolean = false,
-    var bgTolerance: Float = 10f,
     var bgColor: Int = android.graphics.Color.WHITE,
     
     var targetWidth: String = "",

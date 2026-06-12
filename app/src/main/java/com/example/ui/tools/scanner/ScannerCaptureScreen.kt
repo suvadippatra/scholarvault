@@ -106,10 +106,7 @@ fun ScannerCaptureScreen(onBack: () -> Unit, docViewModel: DocumentViewModel, sc
                     for (i in 0 until filePaths.length()) {
                         val path = filePaths.getString(i)
                         if (!path.endsWith(".pdf", ignoreCase = true)) {
-                            uris.add(Uri.fromFile(java.io.File(path)))
-                        } else {
-                            // It's a PDF export, we can extract just the PDF path, but normally a session should have raw JPGs.
-                            uris.add(Uri.fromFile(java.io.File(path)))
+                            uris.add(Uri.parse(path))
                         }
                     }
                     scannedUris = uris
@@ -121,13 +118,13 @@ fun ScannerCaptureScreen(onBack: () -> Unit, docViewModel: DocumentViewModel, sc
 
     var isProcessing by remember { mutableStateOf(false) }
     val appPrefs = remember { com.scholarvault.data.AppPreferences(context) }
-    val scannerEngine by appPrefs.scannerEngine.collectAsState(initial = "custom")
+    val scannerEngine by appPrefs.scannerEngine.collectAsState(initial = "")
     var hasAutoLaunched by remember { mutableStateOf(false) }
     var showCustomScanner by remember { mutableStateOf(false) }
     var autoLaunchSystemScanner by remember { mutableStateOf(false) }
 
     LaunchedEffect(scannedUris, scannerEngine) {
-        if (scannedUris.isEmpty() && !hasAutoLaunched && scanId == null) {
+        if (scannedUris.isEmpty() && !hasAutoLaunched && scanId == null && scannerEngine.isNotEmpty()) {
             hasAutoLaunched = true
             if (scannerEngine == "system") {
                 autoLaunchSystemScanner = true
@@ -520,8 +517,18 @@ fun ScannerCaptureScreen(onBack: () -> Unit, docViewModel: DocumentViewModel, sc
                         }
                         Spacer(modifier = Modifier.height(32.dp))
                         
-                        Button(
-                            onClick = {
+                        var showExportDialog by remember { mutableStateOf(false) }
+                        var showDraftRenameDialog by remember { mutableStateOf(false) }
+                        var sessionNameInput by remember { mutableStateOf("Document_${System.currentTimeMillis()}") }
+
+                        val createPdfLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+                            androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/pdf")
+                        ) { uri ->
+                            if (uri != null) {
+                                try {
+                                    context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                                } catch (e: Exception) {}
+                                
                                 val urisArray = org.json.JSONArray()
                                 scannedUris.forEach { urisArray.put(it.toString()) }
                                 
@@ -533,6 +540,8 @@ fun ScannerCaptureScreen(onBack: () -> Unit, docViewModel: DocumentViewModel, sc
                                     .putString("fitMode", selectedFit)
                                     .putString("filterMode", selectedFilter)
                                     .putString("dpiMode", selectedDpi)
+                                    .putString("customFileName", sessionNameInput)
+                                    .putString("customOutputUri", uri.toString())
                                     .apply {
                                         scanId?.let { putString("scanId", it) }
                                     }
@@ -546,7 +555,81 @@ fun ScannerCaptureScreen(onBack: () -> Unit, docViewModel: DocumentViewModel, sc
                                 
                                 isProcessing = true
                                 currentWorkId = workRequest.id
-                                Toast.makeText(context, "Exporting PDF...", Toast.LENGTH_SHORT).show()
+                                android.widget.Toast.makeText(context, "Exporting PDF...", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        }
+
+                        if (showExportDialog) {
+                            AlertDialog(
+                                onDismissRequest = { showExportDialog = false },
+                                title = { Text("Export PDF") },
+                                text = {
+                                    Column {
+                                        Text("Enter a name for the document:")
+                                        Spacer(Modifier.height(8.dp))
+                                        OutlinedTextField(
+                                            value = sessionNameInput,
+                                            onValueChange = { sessionNameInput = it },
+                                            singleLine = true,
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
+                                },
+                                confirmButton = {
+                                    TextButton(onClick = {
+                                        showExportDialog = false
+                                        val fn = if (sessionNameInput.endsWith(".pdf", ignoreCase = true)) sessionNameInput else "$sessionNameInput.pdf"
+                                        createPdfLauncher.launch(fn)
+                                    }) { Text("Choose Destination & Export") }
+                                },
+                                dismissButton = {
+                                    TextButton(onClick = { showExportDialog = false }) { Text("Cancel") }
+                                }
+                            )
+                        }
+
+                        if (showDraftRenameDialog) {
+                            AlertDialog(
+                                onDismissRequest = { showDraftRenameDialog = false },
+                                title = { Text("Save Session") },
+                                text = {
+                                    Column {
+                                        Text("Enter a name for this editing session:")
+                                        Spacer(Modifier.height(8.dp))
+                                        OutlinedTextField(
+                                            value = sessionNameInput,
+                                            onValueChange = { sessionNameInput = it },
+                                            singleLine = true,
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
+                                },
+                                confirmButton = {
+                                    TextButton(onClick = {
+                                        showDraftRenameDialog = false
+                                        val pagePaths = org.json.JSONArray()
+                                        scannedUris.forEach { uri -> pagePaths.put(uri.toString()) }
+                                        
+                                        val entity = com.scholarvault.data.model.ScannedDocumentEntity(
+                                            id = scanId ?: java.util.UUID.randomUUID().toString(),
+                                            name = sessionNameInput,
+                                            pagePaths = pagePaths.toString()
+                                        )
+                                        scannerViewModel.insertScan(entity)
+                                        prefs.edit().remove("draft_uris").apply()
+                                        android.widget.Toast.makeText(context, "Saved Session", android.widget.Toast.LENGTH_SHORT).show()
+                                        onBack()
+                                    }) { Text("Save") }
+                                },
+                                dismissButton = {
+                                    TextButton(onClick = { showDraftRenameDialog = false }) { Text("Cancel") }
+                                }
+                            )
+                        }
+                        
+                        Button(
+                            onClick = {
+                                showExportDialog = true
                             },
                             modifier = Modifier.fillMaxWidth(),
                             enabled = !isProcessing && scannedUris.isNotEmpty()
@@ -578,18 +661,7 @@ fun ScannerCaptureScreen(onBack: () -> Unit, docViewModel: DocumentViewModel, sc
                         
                         OutlinedButton(
                             onClick = {
-                                val pagePaths = org.json.JSONArray()
-                                scannedUris.forEach { uri -> pagePaths.put(uri.path) }
-                                
-                                val entity = com.scholarvault.data.model.ScannedDocumentEntity(
-                                    id = scanId ?: java.util.UUID.randomUUID().toString(),
-                                    name = "Scan_Session_${System.currentTimeMillis()}",
-                                    pagePaths = pagePaths.toString()
-                                )
-                                scannerViewModel.insertScan(entity)
-                                prefs.edit().remove("draft_uris").apply() // Clear draft on implicit save
-                                Toast.makeText(context, "Saved Session", Toast.LENGTH_SHORT).show()
-                                onBack()
+                                showDraftRenameDialog = true
                             },
                             modifier = Modifier.fillMaxWidth(),
                             enabled = scannedUris.isNotEmpty() && !isProcessing
@@ -604,6 +676,23 @@ fun ScannerCaptureScreen(onBack: () -> Unit, docViewModel: DocumentViewModel, sc
     }
 
     if (showSuccessSheet) {
+        val createDocLauncher = rememberLauncherForActivityResult(
+            contract = androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/pdf")
+        ) { uri ->
+            if (uri != null) {
+                try {
+                    context.contentResolver.openOutputStream(uri)?.use { out ->
+                        java.io.File(exportedFilePath).inputStream().use { input ->
+                            input.copyTo(out)
+                        }
+                    }
+                    Toast.makeText(context, "Saved Successfully", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Failed to save", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        
         ModalBottomSheet(
             onDismissRequest = { 
                 showSuccessSheet = false 
@@ -684,25 +773,7 @@ fun ScannerCaptureScreen(onBack: () -> Unit, docViewModel: DocumentViewModel, sc
                     
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { 
                         updatePdfMetadata(exportedFilePath, exportedAuthor, exportedSubject)
-                        try {
-                            val values = android.content.ContentValues().apply {
-                                put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, exportedFileName)
-                                put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "application/pdf")
-                                put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS)
-                            }
-                            val resolver = context.contentResolver
-                            val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-                            if (uri != null) {
-                                resolver.openOutputStream(uri)?.use { out ->
-                                    java.io.File(exportedFilePath).inputStream().use { input ->
-                                        input.copyTo(out)
-                                    }
-                                }
-                                Toast.makeText(context, "Saved to Downloads", Toast.LENGTH_SHORT).show()
-                            }
-                        } catch(e: Exception) {
-                            Toast.makeText(context, "Failed to save to device", Toast.LENGTH_SHORT).show()
-                        }
+                        createDocLauncher.launch(if (exportedFileName.endsWith(".pdf", ignoreCase = true)) exportedFileName else "$exportedFileName.pdf")
                     }.padding(8.dp)) {
                         Icon(Icons.Default.Download, contentDescription = "Save to Device")
                         Spacer(modifier = Modifier.height(4.dp))

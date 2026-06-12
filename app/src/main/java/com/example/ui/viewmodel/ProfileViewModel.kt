@@ -19,7 +19,7 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 
 class ProfileViewModel(application: Application) : AndroidViewModel(application) {
-    private val secureProfileManager = SecureProfileManager(application)
+    private val secureProfileManager = SecureProfileManager.getInstance(application)
 
     val profileStream: StateFlow<UserProfileWithDetails?> = secureProfileManager.profileStream
 

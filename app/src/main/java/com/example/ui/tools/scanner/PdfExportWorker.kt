@@ -188,12 +188,29 @@ class PdfExportWorker(
             }
         }
 
-        val fileName = "Scanned_Document_${System.currentTimeMillis()}.pdf"
+        val customFileName = inputData.getString("customFileName")
+        val customOutputUri = inputData.getString("customOutputUri")
+        val fileName = if (customFileName != null) {
+            if (customFileName.endsWith(".pdf", ignoreCase = true)) customFileName else "$customFileName.pdf"
+        } else {
+            "Scanned_Document_${System.currentTimeMillis()}.pdf"
+        }
         val file = File(applicationContext.filesDir, fileName)
         val fos = FileOutputStream(file)
         pdfDocument.writeTo(fos)
         pdfDocument.close()
         fos.close()
+
+        if (customOutputUri != null) {
+            try {
+                val uri = android.net.Uri.parse(customOutputUri)
+                applicationContext.contentResolver.openOutputStream(uri)?.use { outStream ->
+                    file.inputStream().use { it.copyTo(outStream) }
+                }
+            } catch (e: Exception) {
+                Log.e("PdfExportWorker", "Failed to write to custom uri", e)
+            }
+        }
 
         if (enableOcr && extractedTexts.isNotEmpty()) {
             val txtFile = File(applicationContext.filesDir, fileName.replace(".pdf", "_ocr.txt"))
@@ -202,6 +219,9 @@ class PdfExportWorker(
 
         val pagePaths = JSONArray()
         pagePaths.put(file.absolutePath)
+        for (u in uris) {
+            pagePaths.put(u)
+        }
         
         val db = (applicationContext as com.scholarvault.MainApplication).database
         val finalEntity = ScannedDocumentEntity(

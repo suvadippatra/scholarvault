@@ -1,6 +1,6 @@
 <div align="center">
   <!-- TODO: Insert your logo file path below -->
-  <img src="app/src/main/res/drawable/app_logo_v2.png" alt="ScholarVault Logo" width="120" height="120" />
+  <img src="app/src/main/res/drawable/logo.png" alt="ScholarVault Logo" width="120" height="120" />
   
   <h1>ScholarVault</h1>
   <p><strong>The Ultimate Student Super-App & Productivity Workspace</strong></p>

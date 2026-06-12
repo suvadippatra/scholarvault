@@ -170,55 +170,19 @@ fun ImageToPdfScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
             contentPadding = PaddingValues(top = 16.dp, bottom = 40.dp)
         ) {
-            // Header Info
             item {
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
-                    ),
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.PictureAsPdf,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(32.dp)
-                        )
-                        Column {
-                            Text(
-                                "PDF Generator",
-                                fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                            Text(
-                                "Convert assignment images, notes or lecture pages into structured PDFs.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                FileDropBox(
+                    onUrisSelected = { uris ->
+                        if (uris.isNotEmpty()) {
+                            selectedImages = selectedImages + uris
+                            generatedPdfFile = null
                         }
-                    }
-                }
+                    },
+                    mimeType = "image/*"
+                )
             }
 
-            if (selectedImages.isEmpty()) {
-                item {
-                    FileDropBox(
-                        onUrisSelected = { uris ->
-                            if (uris.isNotEmpty()) {
-                                selectedImages = selectedImages + uris
-                                generatedPdfFile = null
-                            }
-                        },
-                        mimeType = "image/*"
-                    )
-                }
-            } else {
+            if (selectedImages.isNotEmpty()) {
                 // PDF Options Panel
                 item {
                     Card(

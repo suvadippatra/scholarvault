@@ -60,21 +60,23 @@ fun BitmapComparisonSlider(
                     .align(Alignment.Center)
                     .clipToBounds()
                     .pointerInput(fitWidthDp) {
-                        detectDragGestures { change, dragAmount ->
+                        detectDragGestures { change, _ ->
                             val widthPx = with(density) { fitWidthDp.toPx() }
                             if (widthPx > 0) {
-                                slidePos = (slidePos + dragAmount.x / widthPx).coerceIn(0f, 1f)
+                                slidePos = (change.position.x / widthPx).coerceIn(0f, 1f)
                                 change.consume()
                             }
                         }
                     }
                     .pointerInput(fitWidthDp) {
-                        detectTapGestures { offset ->
-                            val widthPx = with(density) { fitWidthDp.toPx() }
-                            if (widthPx > 0) {
-                                slidePos = (offset.x / widthPx).coerceIn(0f, 1f)
+                        detectTapGestures(
+                            onPress = { offset ->
+                                val widthPx = with(density) { fitWidthDp.toPx() }
+                                if (widthPx > 0) {
+                                    slidePos = (offset.x / widthPx).coerceIn(0f, 1f)
+                                }
                             }
-                        }
+                        )
                     }
             ) {
                 val fitWidthPx = with(density) { fitWidthDp.toPx() }

@@ -14,7 +14,18 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
 
-class SecureProfileManager(private val context: Context) {
+class SecureProfileManager private constructor(private val context: Context) {
+
+    companion object {
+        @Volatile
+        private var INSTANCE: SecureProfileManager? = null
+
+        fun getInstance(context: Context): SecureProfileManager {
+            return INSTANCE ?: synchronized(this) {
+                INSTANCE ?: SecureProfileManager(context.applicationContext).also { INSTANCE = it }
+            }
+        }
+    }
 
     private val _profileFlow = MutableStateFlow<UserProfileWithDetails?>(null)
     val profileStream: StateFlow<UserProfileWithDetails?> = _profileFlow.asStateFlow()

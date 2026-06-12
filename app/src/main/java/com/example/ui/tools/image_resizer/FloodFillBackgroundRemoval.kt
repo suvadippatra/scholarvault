@@ -10,83 +10,62 @@ import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.segmentation.Segmentation
+import com.google.mlkit.vision.segmentation.selfie.SelfieSegmenterOptions
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+
 object FloodFillBackgroundRemoval {
 
-    fun removeBackground(bitmap: Bitmap, tolerance: Float, outBgColor: Int): Bitmap {
-        val w = bitmap.width
-        val h = bitmap.height
-        val pixels = IntArray(w * h)
-        bitmap.getPixels(pixels, 0, w, 0, 0, w, h)
-        
-        val mask = BooleanArray(w * h)
-        val queue = IntArray(w * h)
-        var head = 0
-        var tail = 0
-        
-        // Use top-left as reference color for background
-        val refColor = pixels[0]
-        val refR = Color.red(refColor)
-        val refG = Color.green(refColor)
-        val refB = Color.blue(refColor)
-        
-        fun colorDist(c: Int): Float {
-            val r = Color.red(c)
-            val g = Color.green(c)
-            val b = Color.blue(c)
-            return Math.sqrt(((r - refR)*(r - refR) + (g - refG)*(g - refG) + (b - refB)*(b - refB)).toDouble()).toFloat()
-        }
-        
-        val threshold = tolerance * 2.55f // map 0-100 to 0-255 scaled
-        
-        // Push edges
-        for (x in 0 until w) {
-            if (colorDist(pixels[x]) <= threshold) { queue[tail++] = x; mask[x] = true }
-            val b = (h - 1) * w + x
-            if (!mask[b] && colorDist(pixels[b]) <= threshold) { queue[tail++] = b; mask[b] = true }
-        }
-        for (y in 0 until h) {
-            val l = y * w
-            if (!mask[l] && colorDist(pixels[l]) <= threshold) { queue[tail++] = l; mask[l] = true }
-            val r = y * w + w - 1
-            if (!mask[r] && colorDist(pixels[r]) <= threshold) { queue[tail++] = r; mask[r] = true }
-        }
-        
-        val dx = intArrayOf(-1, 1, 0, 0)
-        val dy = intArrayOf(0, 0, -1, 1)
-        
-        while (head < tail) {
-            val idx = queue[head++]
-            val cx = idx % w
-            val cy = idx / w
-            
-            for (i in 0..3) {
-                val nx = cx + dx[i]
-                val ny = cy + dy[i]
-                if (nx in 0 until w && ny in 0 until h) {
-                    val nIdx = ny * w + nx
-                    if (!mask[nIdx] && colorDist(pixels[nIdx]) <= threshold) {
-                        mask[nIdx] = true
-                        queue[tail++] = nIdx
+    suspend fun removeBackground(bitmap: Bitmap, outBgColor: Int): Bitmap = suspendCancellableCoroutine { continuation ->
+        try {
+            val options = SelfieSegmenterOptions.Builder()
+                .setDetectorMode(SelfieSegmenterOptions.SINGLE_IMAGE_MODE)
+                .build()
+            val segmenter = Segmentation.getClient(options)
+            val image = InputImage.fromBitmap(bitmap, 0)
+
+            segmenter.process(image)
+                .addOnSuccessListener { result ->
+                    try {
+                        val mask = result.buffer
+                        val maskWidth = result.width
+                        val maskHeight = result.height
+                        
+                        val pixels = IntArray(maskWidth * maskHeight)
+                        bitmap.getPixels(pixels, 0, maskWidth, 0, 0, maskWidth, maskHeight)
+
+                        mask.rewind()
+                        for (i in 0 until (maskWidth * maskHeight)) {
+                            val confidence = mask.float
+                            if (confidence < 0.5f) { // Background
+                                pixels[i] = outBgColor
+                            }
+                        }
+                        val bgBitmap = Bitmap.createBitmap(maskWidth, maskHeight, Bitmap.Config.ARGB_8888)
+                        bgBitmap.setPixels(pixels, 0, maskWidth, 0, 0, maskWidth, maskHeight)
+                        continuation.resume(bgBitmap)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        continuation.resume(bitmap) // Fallback to original
                     }
                 }
-            }
+                .addOnFailureListener { e ->
+                    e.printStackTrace()
+                    continuation.resume(bitmap) // Fallback to original
+                }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            continuation.resume(bitmap) // Fallback to original
         }
-        
-        val outPixels = IntArray(w * h)
-        for (i in 0 until (w * h)) {
-            outPixels[i] = if (mask[i]) outBgColor else pixels[i]
-        }
-        
-        val res = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        res.setPixels(outPixels, 0, w, 0, 0, w, h)
-        return res
     }
 
     suspend fun processImageFinal(
         context: Context,
         inputBitmap: Bitmap,
         doBgRemoval: Boolean,
-        bgTolerance: Float,
         bgColor: Int,
         targetWidth: Int,
         targetHeight: Int,
@@ -98,7 +77,7 @@ object FloodFillBackgroundRemoval {
         try {
             var bmp = inputBitmap
             if (doBgRemoval) {
-                bmp = removeBackground(bmp, bgTolerance, bgColor)
+                bmp = removeBackground(bmp, bgColor)
             }
             
             if (targetWidth > 0 && targetHeight > 0 && (bmp.width != targetWidth || bmp.height != targetHeight)) {

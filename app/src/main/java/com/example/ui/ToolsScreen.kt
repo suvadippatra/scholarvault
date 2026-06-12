@@ -41,7 +41,7 @@ val AllToolsList = listOf(
     ToolItem("Reminders", "Never miss a deadline with scheduled alerts.", Icons.Default.Notifications, "Utility", Screen.Reminders.route),
     ToolItem("PDF Color Inverter", "Invert PDF colors for easier reading.", Icons.Default.PictureAsPdf, "Files", "pdf_color_inverter", true),
     ToolItem("Image Resizer", "Resize images with precision for exam forms.", Icons.Default.Image, "Image", Screen.ImageResizer.route, true),
-    ToolItem("Compress Image", "Reduce image size while maintaining quality.", Icons.Default.Compress, "Image", Screen.CompressImage.route, true),
+    ToolItem("Compress File", "Reduce image size or flatten PDF files.", Icons.Default.Compress, "Files", Screen.CompressImage.route, true),
     ToolItem("Image to PDF", "Convert your photos into high-quality PDF files.", Icons.Default.PictureAsPdf, "Image", Screen.ImageToPdf.route, true),
     ToolItem("Recent Generated Media", "Review, share, and save recently generated or compressed files.", Icons.Default.History, "Image", Screen.RecentGeneratedMedia.route, true),
     ToolItem("PDF N-Up", "Combine multiple pages into a single sheet to save paper.", Icons.Default.ViewModule, "Utility", "pdf_nup", true),

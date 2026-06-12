@@ -17,6 +17,10 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.asComposeColorFilter
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -227,13 +231,24 @@ fun PdfPreviewScreen(
             
             Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 if (pageBitmap != null) {
-                    Image(
-                        bitmap = pageBitmap!!.asImageBitmap(),
-                        contentDescription = "PDF Page Canvas",
-                        modifier = Modifier.fillMaxSize().padding(8.dp),
-                        contentScale = ContentScale.Fit,
-                        colorFilter = colorFilter
-                    )
+                    var fraction by remember { mutableStateOf(0.5f) }
+                    
+                    if (showExpectedInverted && colorFilter != null) {
+                        Image(
+                            bitmap = pageBitmap!!.asImageBitmap(),
+                            contentDescription = "PDF Page Canvas Inverted",
+                            modifier = Modifier.fillMaxSize().padding(8.dp),
+                            contentScale = ContentScale.Fit,
+                            colorFilter = colorFilter
+                        )
+                    } else {
+                        Image(
+                            bitmap = pageBitmap!!.asImageBitmap(),
+                            contentDescription = "PDF Page Canvas",
+                            modifier = Modifier.fillMaxSize().padding(8.dp),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
                 } else if (pageCount > 0) {
                     CircularProgressIndicator()
                 } else {

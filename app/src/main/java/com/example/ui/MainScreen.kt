@@ -110,7 +110,9 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
         fun createRoute(noteId: String) = "notes_composer/$noteId"
     }
     object About : Screen("about", "About", Icons.Default.Info)
-    object CompressImage : Screen("compress_image", "Compress Image", Icons.Default.Compress)
+    object CompressImage : Screen("compress_image", "Compress File", Icons.Default.Compress)
+    object FullScreenClock : Screen("fullscreen_clock", "Clock", Icons.Default.AccessTime)
+    object Calendar : Screen("calendar", "Calendar", Icons.Default.DateRange)
     object ImageToPdf : Screen("image_to_pdf", "Image to PDF", Icons.Default.PictureAsPdf)
     object SecureBackup : Screen("secure_backup", "Secure Backup", Icons.Default.Backup)
     object DataExport : Screen("data_export", "Data Export", Icons.Default.ImportExport)
@@ -796,6 +798,12 @@ fun MainScreen(viewModel: AcademicViewModel, docViewModel: DocumentViewModel) {
                     composable(Screen.CompressImage.route) {
                         com.scholarvault.ui.tools.CompressImageScreen(onBack = { navController.popBackStack() })
                     }
+                    composable(Screen.FullScreenClock.route) {
+                        com.scholarvault.ui.tools.FullScreenClockScreen(onBack = { navController.popBackStack() })
+                    }
+                    composable(Screen.Calendar.route) {
+                        com.scholarvault.ui.tools.CalendarScreen(onBack = { navController.popBackStack() })
+                    }
                     composable(Screen.ImageToPdf.route) {
                         com.scholarvault.ui.tools.ImageToPdfScreen(
                             onBack = { navController.popBackStack() },
@@ -830,10 +838,15 @@ fun MainScreen(viewModel: AcademicViewModel, docViewModel: DocumentViewModel) {
                             docViewModel = docViewModel
                         )
                     }
-                    composable("document_scanner_capture") {
+                    composable(
+                        "document_scanner_capture?scanId={scanId}",
+                        arguments = listOf(androidx.navigation.navArgument("scanId") { nullable = true })
+                    ) { backStackEntry ->
+                        val scanId = backStackEntry.arguments?.getString("scanId")
                         com.scholarvault.ui.tools.scanner.ScannerCaptureScreen(
                             onBack = { navController.popBackStack() },
-                            docViewModel = docViewModel
+                            docViewModel = docViewModel,
+                            scanId = scanId
                         )
                     }
                 }
@@ -909,7 +922,7 @@ fun MainScreen(viewModel: AcademicViewModel, docViewModel: DocumentViewModel) {
                             navController.navigate(Screen.Documents.route)
                             scope.launch { docViewModel.triggerUploadChannel.send(Unit) }
                         },
-                        paddingBottom = 98.dp,
+                        paddingBottom = 80.dp,
                         isTablet = isTablet
                     )
                 }
@@ -1432,7 +1445,7 @@ fun TopLevelFab(isFabMenuOpen: Boolean, onToggleFabMenu: () -> Unit) {
 
     Box(
         modifier = Modifier
-            .padding(bottom = 80.dp - 9.dp)
+            .padding(bottom = 80.dp)
             .size(54.dp),
         contentAlignment = Alignment.Center
     ) {
@@ -1590,15 +1603,15 @@ fun FabMenuOverlay(onClose: () -> Unit, onNavigate: (String) -> Unit, onUploadCl
             "Upload" to (Icons.Default.CloudUpload to { onUploadClick() }),
             "Wallet" to (Icons.Default.AccountBalanceWallet to { onNavigate(Screen.ViewWallet.route) }),
             "Transaction" to (Icons.Default.CurrencyExchange to { onNavigate(Screen.Transactions.route) }),
-            "Notes" to (Icons.Default.Description to { onNavigate(Screen.NotesList.route) }),
-            "Capture" to (Icons.Default.DocumentScanner to { onNavigate("document_scanner") }),
+            "Notes" to (Icons.Default.Description to { onNavigate(Screen.QuickNoteFull.route) }),
+            "Scan" to (Icons.Default.DocumentScanner to { onNavigate("document_scanner_capture") }),
             "Record" to (Icons.Default.Mic to { onNavigate("sound_recorder") })
         )
     }
 
     var itemsOrder by remember {
         val vault = com.scholarvault.util.SecurityVault(context)
-        val orderStr = vault.getSecureString(key) ?: "Upload,Wallet,Transaction,Notes,Capture,Record"
+        val orderStr = vault.getSecureString(key) ?: "Upload,Wallet,Transaction,Notes,Scan,Record"
         val list = mutableListOf<Pair<String, Pair<ImageVector, () -> Unit>>>()
         val saved = orderStr.split(",")
         saved.forEach { name ->

@@ -65,6 +65,7 @@ fun ScannedPageMultiEditorScreen(
         Offset(0f, 0f), Offset(1f, 0f),
         Offset(0f, 1f), Offset(1f, 1f)
     )) }
+    var isRectCrop by remember { mutableStateOf(false) }
     
     // Undo/Redo Stacks
     // We will save the state (Bitmap) in the stack
@@ -239,10 +240,25 @@ fun ScannedPageMultiEditorScreen(
                         Icon(Icons.Default.RotateLeft, "Rotate Left", tint = Color.White)
                     }
                     
+                    IconButton(onClick = { isRectCrop = !isRectCrop }) {
+                        Icon(if (isRectCrop) Icons.Default.CropPortrait else Icons.Default.Transform, "Toggle Crop Mode", tint = Color.White)
+                    }
+                    
                     IconButton(onClick = { 
                         saveState()
                         currentBitmap?.let { bmp ->
-                            currentBitmap = applyPerspectiveCropInternal(bmp, points)
+                            currentBitmap = if (isRectCrop) {
+                                // For rectangular crop, just use points 0 (TL) and 3 (BR)
+                                val x0 = (points[0].x * bmp.width).toInt().coerceIn(0, bmp.width - 1)
+                                val y0 = (points[0].y * bmp.height).toInt().coerceIn(0, bmp.height - 1)
+                                val x1 = (points[3].x * bmp.width).toInt().coerceIn(0, bmp.width)
+                                val y1 = (points[3].y * bmp.height).toInt().coerceIn(0, bmp.height)
+                                val w = (x1 - x0).coerceAtLeast(1)
+                                val h = (y1 - y0).coerceAtLeast(1)
+                                Bitmap.createBitmap(bmp, x0, y0, minOf(w, bmp.width - x0), minOf(h, bmp.height - y0))
+                            } else {
+                                applyPerspectiveCropInternal(bmp, points)
+                            }
                             points = listOf(Offset(0f, 0f), Offset(1f, 0f), Offset(0f, 1f), Offset(1f, 1f))
                         }
                     }) {
@@ -310,9 +326,17 @@ fun ScannedPageMultiEditorScreen(
                             if (nearestIdx != -1) {
                                 val nx = (points[nearestIdx].x + dragAmount.x / imgW).coerceIn(0f, 1f)
                                 val ny = (points[nearestIdx].y + dragAmount.y / imgH).coerceIn(0f, 1f)
-                               val newPoints = points.toMutableList()
-                               newPoints[nearestIdx] = Offset(nx, ny)
-                               points = newPoints
+                                val newPoints = points.toMutableList()
+                                newPoints[nearestIdx] = Offset(nx, ny)
+                                if (isRectCrop) {
+                                    when (nearestIdx) {
+                                        0 -> { newPoints[1] = Offset(newPoints[1].x, ny); newPoints[2] = Offset(nx, newPoints[2].y) }
+                                        1 -> { newPoints[0] = Offset(newPoints[0].x, ny); newPoints[3] = Offset(nx, newPoints[3].y) }
+                                        2 -> { newPoints[3] = Offset(newPoints[3].x, ny); newPoints[0] = Offset(nx, newPoints[0].y) }
+                                        3 -> { newPoints[2] = Offset(newPoints[2].x, ny); newPoints[1] = Offset(nx, newPoints[1].y) }
+                                    }
+                                }
+                                points = newPoints
                             }
                         }
                     }) {

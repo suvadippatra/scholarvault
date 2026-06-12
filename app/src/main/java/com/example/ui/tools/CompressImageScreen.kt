@@ -4,19 +4,19 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -28,12 +28,15 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.rememberAsyncImagePainter
 import com.scholarvault.ui.components.TopSearchBar
 import com.scholarvault.ui.theme.LocalThemeController
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
@@ -46,111 +49,139 @@ fun CompressImageScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val isDark = LocalThemeController.current.isDarkTheme
+    val isTablet = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp > 600
+    var showDropBox by remember { mutableStateOf(isTablet) }
 
-    var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var selectedUri by remember { mutableStateOf<Uri?>(null) }
+    var isPdf by remember { mutableStateOf(false) }
+    var fileName by remember { mutableStateOf("") }
+    
+    // Original properties
     var originalSizeStr by remember { mutableStateOf("") }
-    var originalWidth by remember { mutableStateOf(0) }
-    var originalHeight by remember { mutableStateOf(0) }
+    var originalSizeBytes by remember { mutableStateOf(0L) }
+    var originalBitmap by remember { mutableStateOf<Bitmap?>(null) }
 
-    var quality by remember { mutableStateOf(80f) }
-    var scalePercent by remember { mutableStateOf(100f) }
+    // Settings
+    var compressPercent by remember { mutableStateOf(50f) }
+    var pdfMode by remember { mutableStateOf("image") } // "image" or "vector"
 
-    var isCompressing by remember { mutableStateOf(false) }
-    var compressedFile by remember { mutableStateOf<File?>(null) }
+    // Compressed properties
+    var compressedBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var compressedSizeBytes by remember { mutableStateOf(0L) }
     var compressedSizeStr by remember { mutableStateOf("") }
-    var compressedWidth by remember { mutableStateOf(0) }
-    var compressedHeight by remember { mutableStateOf(0) }
-    var compressionRatio by remember { mutableStateOf("") }
+    var isCalculating by remember { mutableStateOf(false) }
+    
+    var compressedPdfFile by remember { mutableStateOf<File?>(null) }
 
-    val imagePickerLauncher = rememberLauncherForActivityResult(
+    var debounceJob by remember { mutableStateOf<Job?>(null) }
+
+    val handleUris = { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            val uri = uris.first()
+            selectedUri = uri
+            val type = context.contentResolver.getType(uri)
+            isPdf = type == "application/pdf"
+            fileName = getFileName(context, uri)
+            
+            if (isPdf) {
+                // Determine PDF Size
+                scope.launch {
+                    val size = getFileSize(context, uri)
+                    originalSizeBytes = size
+                    originalSizeStr = formatBytes(size)
+                    originalBitmap = null
+                    compressedBitmap = null
+                    compressedPdfFile = null
+                    
+                    if (pdfMode == "image") {
+                        isCalculating = true
+                        compressPdfImageBased(context, uri, compressPercent) { tempPdf, cSize ->
+                            compressedPdfFile = tempPdf
+                            compressedSizeBytes = cSize
+                            compressedSizeStr = formatBytes(cSize)
+                            isCalculating = false
+                        }
+                    } else if (pdfMode == "vector") {
+                        isCalculating = true
+                        compressPdfVectorPreserving(context, uri, compressPercent) { tempPdf, cSize ->
+                            compressedPdfFile = tempPdf
+                            compressedSizeBytes = cSize
+                            compressedSizeStr = formatBytes(cSize)
+                            isCalculating = false
+                        }
+                    }
+                }
+            } else {
+                // Load Image exact
+                isCalculating = true
+                scope.launch {
+                    val bmp = loadOriginalBitmapExact(context, uri)
+                    if (bmp != null) {
+                        originalBitmap = bmp
+                        val size = getFileSize(context, uri)
+                        originalSizeBytes = size
+                        originalSizeStr = formatBytes(size)
+                        // Trigger calculation
+                        recalculateCompressionExact(bmp, compressPercent) { cBmp, cSize ->
+                            compressedBitmap = cBmp
+                            compressedSizeBytes = cSize
+                            compressedSizeStr = formatBytes(cSize)
+                            isCalculating = false
+                        }
+                    } else {
+                        isCalculating = false
+                        Toast.makeText(context, "Could not load image", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+    }
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) {
-            selectedImageUri = uri
-            compressedFile = null // Reset previous compression
-            scope.launch {
-                getOriginalImageDetails(context, uri) { sizeStr, w, h ->
-                    originalSizeStr = sizeStr
-                    originalWidth = w
-                    originalHeight = h
-                }
-            }
+            handleUris(listOf(uri))
         }
     }
 
     var showExportSheet by remember { mutableStateOf(false) }
-    var showHelpDialog by remember { mutableStateOf(false) }
-    var showHistoryDialog by remember { mutableStateOf(false) }
 
-    fun handleSelectedUri(uri: Uri) {
-        selectedImageUri = uri
-        compressedFile = null // Reset previous compression
-        scope.launch {
-            getOriginalImageDetails(context, uri) { sizeStr, w, h ->
-                originalSizeStr = sizeStr
-                originalWidth = w
-                originalHeight = h
-            }
-        }
-    }
-
-    if (showHelpDialog) {
-        AlertDialog(
-            onDismissRequest = { showHelpDialog = false },
-            title = { Text("Compression Guide") },
-            text = {
-                Column(Modifier.verticalScroll(rememberScrollState())) {
-                    Text("1. Select an Image: Pick any PNG, JPEG or WEBP photo from your Device, My Files or secure Wallet.", style = MaterialTheme.typography.bodyMedium)
-                    Spacer(Modifier.height(8.dp))
-                    Text("2. Set Quality: Lower quality values mean smaller files. 70-80% is usually perfect for clear documents with massive size savings.", style = MaterialTheme.typography.bodyMedium)
-                    Spacer(Modifier.height(8.dp))
-                    Text("3. Set Scaling: If your image size in pixels is very large, slide to scale down (e.g. to 50%) to shrink Kb sizes further.", style = MaterialTheme.typography.bodyMedium)
-                    Spacer(Modifier.height(8.dp))
-                    Text("4. Compress: Click 'Compress Image Now' to run the fast background reducer.", style = MaterialTheme.typography.bodyMedium)
-                    Spacer(Modifier.height(8.dp))
-                    Text("5. Export & Save: Use the standard Save panel to share, print, download, or lock the output in your Secure Vault.", style = MaterialTheme.typography.bodyMedium)
-                }
-            },
-            confirmButton = { TextButton(onClick = { showHelpDialog = false }) { Text("Got it") } }
-        )
-    }
-
-    if (showHistoryDialog) {
-        AlertDialog(
-            onDismissRequest = { showHistoryDialog = false },
-            title = { Text("Recent Compressions") },
-            text = {
-                val cacheDir = File(context.cacheDir.absolutePath)
-                val files = cacheDir.listFiles()?.filter { it.name.startsWith("compressed_") && it.name.endsWith(".jpg") }?.sortedByDescending { it.lastModified() } ?: emptyList()
-                if (files.isEmpty()) {
-                    Text("No recent compressions found in cache.")
-                } else {
-                    androidx.compose.foundation.lazy.LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp)) {
-                        items(files.size) { i ->
-                            val f = files[i]
-                            val displaySize = formatBytes(f.length())
-                            val dateStr = java.text.SimpleDateFormat("HH:mm, MMM dd", java.util.Locale.getDefault()).format(java.util.Date(f.lastModified()))
-                            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(f.name.substringAfter("compressed_"), fontWeight = FontWeight.Medium, maxLines = 1)
-                                    Text("$displaySize • $dateStr", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                IconButton(onClick = {
-                                    val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", f)
-                                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                        type = "image/jpeg"
-                                        putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                    }
-                                    context.startActivity(android.content.Intent.createChooser(intent, "Share"))
-                                }) { Icon(Icons.Default.Share, "Share", modifier = Modifier.size(20.dp)) }
-                            }
+    // When slider changes, debounce real-time calculation
+    LaunchedEffect(compressPercent, pdfMode) {
+        if (selectedUri != null) {
+            debounceJob?.cancel()
+            debounceJob = scope.launch {
+                if (!isPdf && originalBitmap != null) {
+                    isCalculating = true
+                    delay(300) // Debounce
+                    recalculateCompressionExact(originalBitmap!!, compressPercent) { cBmp, cSize ->
+                        compressedBitmap = cBmp
+                        compressedSizeBytes = cSize
+                        compressedSizeStr = formatBytes(cSize)
+                        isCalculating = false
+                    }
+                } else if (isPdf) {
+                    isCalculating = true
+                    delay(500) // Longer debounce for PDF
+                    if (pdfMode == "image") {
+                        compressPdfImageBased(context, selectedUri!!, compressPercent) { tempPdf, cSize ->
+                            compressedPdfFile = tempPdf
+                            compressedSizeBytes = cSize
+                            compressedSizeStr = formatBytes(cSize)
+                            isCalculating = false
+                        }
+                    } else if (pdfMode == "vector") {
+                        compressPdfVectorPreserving(context, selectedUri!!, compressPercent) { tempPdf, cSize ->
+                            compressedPdfFile = tempPdf
+                            compressedSizeBytes = cSize
+                            compressedSizeStr = formatBytes(cSize)
+                            isCalculating = false
                         }
                     }
                 }
-            },
-            confirmButton = { TextButton(onClick = { showHistoryDialog = false }) { Text("Close") } }
-        )
+            }
+        }
     }
 
     Scaffold(
@@ -158,17 +189,9 @@ fun CompressImageScreen(onBack: () -> Unit) {
             TopSearchBar(
                 onOpenDrawer = onBack,
                 isBackButton = true,
-                title = "Compress Image",
+                title = "Compress File",
                 showProfileIcon = false,
-                showSearchBar = false,
-                actions = {
-                    IconButton(onClick = { showHistoryDialog = true }) {
-                        Icon(Icons.Default.History, "History")
-                    }
-                    IconButton(onClick = { showHelpDialog = true }) {
-                        Icon(Icons.Default.HelpOutline, "Help Information")
-                    }
-                }
+                showSearchBar = false
             )
         }
     ) { paddingValues ->
@@ -181,362 +204,443 @@ fun CompressImageScreen(onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Header Description
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
-                ),
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Compress,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.secondary,
-                        modifier = Modifier.size(32.dp)
-                    )
-                    Column {
-                        Text(
-                            "Image Reducer",
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Text(
-                            "Optimize, resize and reduce image file size for student/exam forms.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            // Image Picker / Preview Box
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(240.dp)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                    .border(
-                        1.dp,
-                        MaterialTheme.colorScheme.outlineVariant,
-                        RoundedCornerShape(20.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                if (selectedImageUri == null) {
-                    FileDropBox(
-                        onUrisSelected = { uris ->
-                            uris.firstOrNull()?.let { handleSelectedUri(it) }
-                        },
-                        mimeType = "image/*"
+            if (selectedUri == null) {
+                if (showDropBox) {
+                    com.scholarvault.ui.tools.FileDropBox(
+                        onUrisSelected = handleUris,
+                        onClose = if (!isTablet) { { showDropBox = false } } else null
                     )
                 } else {
-                    val displayImage = compressedFile ?: File(getRealPathFromUri(context, selectedImageUri!!) ?: "")
-                    if (displayImage.exists()) {
-                        Image(
-                            painter = rememberAsyncImagePainter(model = displayImage),
-                            contentDescription = "Preview",
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        Image(
-                            painter = rememberAsyncImagePainter(model = selectedImageUri),
-                            contentDescription = "Preview",
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-
-                    // Change Image Overlay Pill
                     Box(
                         modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(12.dp)
-                            .background(
-                                MaterialTheme.colorScheme.primaryContainer,
-                                RoundedCornerShape(12.dp)
-                            )
-                            .clickable { selectedImageUri = null } // Allow selecting another file by resetting
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                            .fillMaxWidth()
+                            .height(240.dp)
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(20.dp)),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            "Change",
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp
-                        )
-                    }
-                }
-            }
-
-            if (selectedImageUri != null) {
-                // Dimensions & Info Card
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp)
-                    )
-                ) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Image Details", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Original Size:", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("$originalSizeStr ($originalWidth x $originalHeight px)", fontWeight = FontWeight.Medium)
-                        }
-                        if (compressedFile != null) {
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Compressed Size:", color = MaterialTheme.colorScheme.secondary)
-                                Text("$compressedSizeStr ($compressedWidth x $compressedHeight px)", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
-                            }
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Reduction Ratio:", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text(compressionRatio, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                            }
-                        }
-                    }
-                }
-
-                // Controls
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        Text("Compression Parameters", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
-
-                        // Quality Slider
-                        Column {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Compression Quality", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("${quality.toInt()}%", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                            }
-                            Slider(
-                                value = quality,
-                                onValueChange = { quality = it },
-                                valueRange = 10f..100f,
-                                steps = 17
-                            )
-                        }
-
-                        // Resize Slider
-                        Column {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Dimensions Scaling", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("${scalePercent.toInt()}%", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                            }
-                            Slider(
-                                value = scalePercent,
-                                onValueChange = { scalePercent = it },
-                                valueRange = 20f..100f,
-                                steps = 15
-                            )
-                        }
-
-                        Button(
-                            onClick = {
-                                isCompressing = true
-                                scope.launch {
-                                    runImageCompression(
-                                        context = context,
-                                        uri = selectedImageUri!!,
-                                        quality = quality.toInt(),
-                                        scale = scalePercent / 100f
-                                    ) { file, sizeStr, w, h, ratio ->
-                                        compressedFile = file
-                                        compressedSizeStr = sizeStr
-                                        compressedWidth = w
-                                        compressedHeight = h
-                                        compressionRatio = ratio
-                                        isCompressing = false
-                                        Toast.makeText(context, "Image Compressed successfully", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = !isCompressing
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
                         ) {
-                            if (isCompressing) {
-                                CircularProgressIndicator(modifier = Modifier.size(20.dp).padding(end = 8.dp), color = MaterialTheme.colorScheme.onPrimary)
-                                Text("Compressing...")
-                            } else {
-                                Icon(Icons.Default.Compress, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Compress Image Now")
-                            }
+                            Icon(Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.height(16.dp))
+                            com.scholarvault.ui.tools.AddFilesMenuButton(
+                                onDeviceClick = { filePickerLauncher.launch("*/*") },
+                                onUrisSelected = handleUris,
+                                onLongPress = { showDropBox = true },
+                                label = "Select File"
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text("Supports JPG, PNG, WEBP, PDF", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                    }
-                }
-
-                // Sharing and Export Controls
-                if (compressedFile != null) {
-                    Button(
-                        onClick = { showExportSheet = true },
-                        modifier = Modifier.fillMaxWidth().height(50.dp),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Export / Save Compressed Image")
                     }
                 }
             } else {
-                // Empty state guidance
-                Text(
-                    "Please choose an image to configure dynamic compression size.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                    modifier = Modifier.padding(horizontal = 24.dp),
-                    fontSize = 14.sp
-                )
-            }
-        }
-    }
-
-    if (showExportSheet && compressedFile != null) {
-        val resultUri = androidx.core.content.FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.fileprovider",
-            compressedFile!!
-        )
-        val defaultName = compressedFile!!.name
-        SaveDestinationBottomSheet(
-            fileUri = resultUri,
-            defaultFileName = defaultName,
-            onDismiss = { showExportSheet = false },
-            onSuccess = { fullName ->
-                Toast.makeText(context, "$fullName saved successfully!", Toast.LENGTH_SHORT).show()
-            }
-        )
-    }
-}
-
-private suspend fun getOriginalImageDetails(
-    context: Context,
-    uri: Uri,
-    onResult: (String, Int, Int) -> Unit
-) = withContext(Dispatchers.IO) {
-    try {
-        var size = 0L
-        context.contentResolver.openAssetFileDescriptor(uri, "r")?.use {
-            size = it.length
-        }
-        if (size <= 0) {
-            val file = File(getRealPathFromUri(context, uri) ?: "")
-            if (file.exists()) {
-                size = file.length()
-            }
-        }
-
-        context.contentResolver.openInputStream(uri)?.use { input ->
-            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeStream(input, null, options)
-            val sizeStr = formatBytes(size)
-            onResult(sizeStr, options.outWidth, options.outHeight)
-        }
-    } catch (e: Exception) {
-        e.printStackTrace()
-    }
-}
-
-private suspend fun runImageCompression(
-    context: Context,
-    uri: Uri,
-    quality: Int,
-    scale: Float,
-    onResult: (File, String, Int, Int, String) -> Unit
-) = withContext(Dispatchers.IO) {
-    try {
-        context.contentResolver.openInputStream(uri)?.use { input ->
-            val originalBitmap = BitmapFactory.decodeStream(input)
-            if (originalBitmap != null) {
-                val newWidth = (originalBitmap.width * scale).toInt().coerceAtLeast(1)
-                val newHeight = (originalBitmap.height * scale).toInt().coerceAtLeast(1)
-                val scaledBitmap = Bitmap.createScaledBitmap(originalBitmap, newWidth, newHeight, true)
-
-                val outputStream = ByteArrayOutputStream()
-                scaledBitmap.compress(Bitmap.CompressFormat.JPEG, quality, outputStream)
-                val compressedData = outputStream.toByteArray()
-
-                val tempFile = File(context.cacheDir, "compressed_${System.currentTimeMillis()}.jpg")
-                FileOutputStream(tempFile).use { out ->
-                    out.write(compressedData)
-                    out.flush()
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text(if (isPdf) "PDF File" else "Image File", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                            TextButton(onClick = { selectedUri = null; originalBitmap = null; compressedBitmap = null; compressedPdfFile = null }) {
+                                Text("Change")
+                            }
+                        }
+                        Text(fileName, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+                    }
                 }
 
-                // Original Size determination
-                var origSize = 1L
-                context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { origSize = it.length }
+                if (isPdf) {
+                    // PDF Mode Switcher
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .padding(4.dp),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(20.dp))
+                                .clickable { pdfMode = "image" }
+                                .background(if (pdfMode == "image") MaterialTheme.colorScheme.primary else Color.Transparent)
+                                .padding(vertical = 12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("Image-Based", fontWeight = FontWeight.Bold, color = if (pdfMode == "image") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(20.dp))
+                                .clickable { pdfMode = "vector" }
+                                .background(if (pdfMode == "vector") MaterialTheme.colorScheme.primary else Color.Transparent)
+                                .padding(vertical = 12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("Vector-Preserve", fontWeight = FontWeight.Bold, color = if (pdfMode == "vector") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
 
-                val reduction = if (origSize > 0) {
-                    val pct = ((origSize - compressedData.size).toFloat() / origSize.toFloat() * 100f).toInt()
-                    "Reduced by $pct%"
-                } else "Success"
+                    // Vector or Image based Slider & Tooltip
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    if (pdfMode == "vector") "Preserves text/shapes. Only compresses embedded images (slower, high fidelity)." 
+                                    else "Flattens entire PDF into images. Text gets rasterized (faster, but loss of text searchability/crispness).",
+                                    fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(if (pdfMode == "vector") "Image Optimization Quality" else "Rasterize Scale Level", fontWeight = FontWeight.Bold)
+                                Text("${compressPercent.toInt()}%", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                            }
+                            Slider(
+                                value = compressPercent,
+                                onValueChange = { compressPercent = it },
+                                valueRange = 10f..100f
+                            )
+                            Text(
+                                if (pdfMode == "vector") "Lower percentage heavily compresses embedded images." 
+                                else "Lower percentage creates smaller dimensions & fuzzier rasterized text.",
+                                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                    
+                    // Comparison for PDF
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                                    Text("Original", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(originalSizeStr, fontSize = 24.sp, color = MaterialTheme.colorScheme.primary)
+                                }
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                                    Text("Compressed", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    if (isCalculating) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text("...", fontSize = 24.sp)
+                                        }
+                                    } else {
+                                        Text(compressedSizeStr, fontSize = 24.sp, color = if (compressedSizeBytes < originalSizeBytes) Color(0xFF43A047) else MaterialTheme.colorScheme.error)
+                                    }
+                                }
+                            }
+                        }
+                    }
 
-                onResult(
-                    tempFile,
-                    formatBytes(compressedData.size.toLong()),
-                    newWidth,
-                    newHeight,
-                    reduction
+                    Button(
+                        onClick = { showExportSheet = true },
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        enabled = !isCalculating && compressedPdfFile != null,
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Icon(Icons.Default.Save, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Save Compressed PDF", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                } else {
+                    // Image Exact Preview - Side by Side
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(260.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Original
+                        Box(modifier = Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(12.dp)).background(Color.Black)) {
+                            if (originalBitmap != null) {
+                                Image(
+                                    bitmap = originalBitmap!!.asImageBitmap(),
+                                    contentDescription = "Original",
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                            Box(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Color.Black.copy(alpha=0.6f)).padding(4.dp), contentAlignment = Alignment.Center) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("Original", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Text(originalSizeStr, color = Color.White, fontSize = 14.sp)
+                                }
+                            }
+                        }
+                        // Compressed
+                        Box(modifier = Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(12.dp)).background(Color.Black)) {
+                            if (compressedBitmap != null) {
+                                Image(
+                                    bitmap = compressedBitmap!!.asImageBitmap(),
+                                    contentDescription = "Compressed",
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                            if (isCalculating) {
+                                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center), color = Color.White)
+                            }
+                            Box(modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Color.Black.copy(alpha=0.6f)).padding(4.dp), contentAlignment = Alignment.Center) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("Compressed", color = Color.Green, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Text(if (isCalculating) "..." else compressedSizeStr, color = Color.Green, fontSize = 14.sp)
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Slider
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Compression Level", fontWeight = FontWeight.Bold)
+                                Text("${compressPercent.toInt()}%", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                            }
+                            Slider(
+                                value = compressPercent,
+                                onValueChange = { compressPercent = it },
+                                valueRange = 1f..100f
+                            )
+                            Text("1% = Max Compression (Lowest Quality) | 100% = Low Compression (Best Quality)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                        }
+                    }
+                    
+                    Button(
+                        onClick = { showExportSheet = true },
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        enabled = !isCalculating && compressedBitmap != null,
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Icon(Icons.Default.Save, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Save Compressed Image", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+
+    if (showExportSheet) {
+        if (isPdf && compressedPdfFile != null) {
+            val resultUri = androidx.core.content.FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                compressedPdfFile!!
+            )
+            SaveDestinationBottomSheet(
+                fileUri = resultUri,
+                defaultFileName = "compressed_$fileName",
+                onDismiss = { showExportSheet = false },
+                onSuccess = { fullName ->
+                    Toast.makeText(context, "$fullName saved successfully!", Toast.LENGTH_SHORT).show()
+                }
+            )
+        } else if (!isPdf && compressedBitmap != null) {
+            // Save the exact preview compressed bytes into a temp file for Export
+            var tempFileToExport by remember { mutableStateOf<File?>(null) }
+            
+            LaunchedEffect(Unit) {
+                withContext(Dispatchers.IO) {
+                    val temp = File(context.cacheDir, "comp_${System.currentTimeMillis()}.jpg")
+                    val outStr = ByteArrayOutputStream()
+                    originalBitmap!!.compress(Bitmap.CompressFormat.JPEG, compressPercent.toInt().coerceAtLeast(1), outStr)
+                    FileOutputStream(temp).use { it.write(outStr.toByteArray()) }
+                    tempFileToExport = temp
+                }
+            }
+
+            if (tempFileToExport != null) {
+                val resultUri = androidx.core.content.FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    tempFileToExport!!
+                )
+                SaveDestinationBottomSheet(
+                    fileUri = resultUri,
+                    defaultFileName = "compressed_$fileName".replace(".png", ".jpg").replace(".webp", ".jpg"),
+                    onDismiss = { showExportSheet = false },
+                    onSuccess = { fullName ->
+                        Toast.makeText(context, "$fullName saved successfully!", Toast.LENGTH_SHORT).show()
+                    }
                 )
             }
         }
-    } catch (e: Exception) {
-        e.printStackTrace()
     }
 }
 
-private fun saveToGallery(context: Context, file: File) {
-    try {
-        val root = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_PICTURES)
-        val destDir = File(root, "ScholarVault")
-        if (!destDir.exists()) destDir.mkdirs()
+// ----------------------------------------------------- //
+// Helper native strict execution functions
+// ----------------------------------------------------- //
 
-        val destFile = File(destDir, "Compressed_${System.currentTimeMillis()}.jpg")
-        file.inputStream().use { input ->
-            destFile.outputStream().use { output ->
-                input.copyTo(output)
+private suspend fun compressPdfVectorPreserving(
+    context: Context,
+    uri: Uri,
+    percent: Float, // 10 to 100
+    onResult: (File, Long) -> Unit
+) = withContext(Dispatchers.IO) {
+    try {
+        val parcelFileDescriptor = context.contentResolver.openFileDescriptor(uri, "r") ?: return@withContext
+        val inputStream = java.io.FileInputStream(parcelFileDescriptor.fileDescriptor)
+        val document = com.tom_roush.pdfbox.pdmodel.PDDocument.load(inputStream, com.tom_roush.pdfbox.io.MemoryUsageSetting.setupTempFileOnly())
+        val quality = percent / 100f
+
+        for (page in document.pages) {
+            val resources = page.resources ?: continue
+            for (name in resources.xObjectNames.toList()) {
+                if (resources.isImageXObject(name)) {
+                    val pdImage = resources.getXObject(name) as? com.tom_roush.pdfbox.pdmodel.graphics.image.PDImageXObject ?: continue
+                    if (pdImage.width > 200 && pdImage.height > 200) {
+                        val originalBitmap = pdImage.image
+                        if (originalBitmap != null) {
+                            val compressedImage = com.tom_roush.pdfbox.pdmodel.graphics.image.JPEGFactory.createFromImage(
+                                document, originalBitmap, quality
+                            )
+                            resources.put(name, compressedImage)
+                            originalBitmap.recycle()
+                        }
+                    }
+                }
             }
         }
-
-        // Notify MediaScanner
-        val mediaScanIntent = android.content.Intent(android.content.Intent.ACTION_MEDIA_SCANNER_SCAN_FILE)
-        mediaScanIntent.data = Uri.fromFile(destFile)
-        context.sendBroadcast(mediaScanIntent)
-
-        Toast.makeText(context, "Saved to Pictures/ScholarVault", Toast.LENGTH_SHORT).show()
+        
+        val tempFile = File(context.cacheDir, "comp_pdf_vec_${System.currentTimeMillis()}.pdf")
+        document.save(tempFile)
+        document.close()
+        inputStream.close()
+        parcelFileDescriptor.close()
+        
+        val newSize = tempFile.length()
+        withContext(Dispatchers.Main) {
+            onResult(tempFile, newSize)
+        }
     } catch (e: Exception) {
         e.printStackTrace()
-        Toast.makeText(context, "Error saving to Pictures category", Toast.LENGTH_SHORT).show()
     }
 }
 
-private fun shareFile(context: Context, file: File) {
+private suspend fun compressPdfImageBased(
+    context: Context,
+    uri: Uri,
+    percent: Float, // 10 to 100
+    onResult: (File, Long) -> Unit
+) = withContext(Dispatchers.IO) {
     try {
-        val uri = androidx.core.content.FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.fileprovider",
-            file
-        )
-        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-            type = "image/jpeg"
-            putExtra(android.content.Intent.EXTRA_STREAM, uri)
-            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        val parcelFileDescriptor = context.contentResolver.openFileDescriptor(uri, "r") ?: return@withContext
+        val renderer = android.graphics.pdf.PdfRenderer(parcelFileDescriptor)
+        
+        val newPdf = android.graphics.pdf.PdfDocument()
+        
+        // Scale down dimensions for smaller size.
+        val scale = (percent / 100f).coerceIn(0.1f, 1f)
+        
+        for (i in 0 until renderer.pageCount) {
+            val page = renderer.openPage(i)
+            
+            val w = (page.width * scale).toInt().coerceAtLeast(1)
+            val h = (page.height * scale).toInt().coerceAtLeast(1)
+            
+            val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            bitmap.eraseColor(android.graphics.Color.WHITE)
+            page.render(bitmap, null, null, android.graphics.pdf.PdfRenderer.Page.RENDER_MODE_FOR_PRINT)
+            page.close()
+            
+            val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(w, h, i).create()
+            val newPage = newPdf.startPage(pageInfo)
+            newPage.canvas.drawBitmap(bitmap, 0f, 0f, null)
+            newPdf.finishPage(newPage)
+            bitmap.recycle()
         }
-        context.startActivity(android.content.Intent.createChooser(intent, "Share Compressed Image"))
+        
+        renderer.close()
+        parcelFileDescriptor.close()
+        
+        val tempFile = File(context.cacheDir, "comp_pdf_${System.currentTimeMillis()}.pdf")
+        FileOutputStream(tempFile).use { out ->
+            newPdf.writeTo(out)
+        }
+        newPdf.close()
+        
+        val newSize = tempFile.length()
+        withContext(Dispatchers.Main) {
+            onResult(tempFile, newSize)
+        }
     } catch (e: Exception) {
         e.printStackTrace()
-        Toast.makeText(context, "Cannot share file", Toast.LENGTH_SHORT).show()
     }
+}
+
+private suspend fun loadOriginalBitmapExact(context: Context, uri: Uri): Bitmap? = withContext(Dispatchers.IO) {
+    try {
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            BitmapFactory.decodeStream(input)
+        }
+    } catch (e: Exception) {
+        null
+    }
+}
+
+private suspend fun recalculateCompressionExact(
+    original: Bitmap,
+    percent: Float,
+    onResult: (Bitmap, Long) -> Unit
+) = withContext(Dispatchers.Default) {
+    // Treat percent as JPEG quality (0-100)
+    // Even at 100%, re-compressing JPEG drops file size. If percent is too low, we can optionally shrink dimensions native.
+    // For now we just use compress quality natively.
+    val quality = percent.toInt().coerceIn(1, 100)
+    val outStream = ByteArrayOutputStream()
+    original.compress(Bitmap.CompressFormat.JPEG, quality, outStream)
+    val bytesArray = outStream.toByteArray()
+    val sizeStr = bytesArray.size.toLong()
+    val newBitmap = BitmapFactory.decodeByteArray(bytesArray, 0, bytesArray.size)
+    
+    withContext(Dispatchers.Main) {
+        onResult(newBitmap, sizeStr)
+    }
+}
+
+private fun getFileSize(context: Context, uri: Uri): Long {
+    var size = 0L
+    context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { size = it.length }
+    if (size <= 0) {
+        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (sizeIndex != -1) size = cursor.getLong(sizeIndex)
+            }
+        }
+    }
+    return size
+}
+
+private fun getFileName(context: Context, uri: Uri): String {
+    var result: String? = null
+    if (uri.scheme == "content") {
+        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (index != -1) result = cursor.getString(index)
+            }
+        }
+    }
+    if (result == null) {
+        result = uri.path
+        val cut = result?.lastIndexOf('/')
+        if (cut != null && cut != -1) {
+            result = result!!.substring(cut + 1)
+        }
+    }
+    return result ?: "Unknown_File"
 }
 
 private fun formatBytes(bytes: Long): String {
@@ -544,22 +648,4 @@ private fun formatBytes(bytes: Long): String {
     val units = listOf("B", "KB", "MB")
     val digitGroups = (Math.log10(bytes.toDouble()) / Math.log10(1024.toDouble())).toInt().coerceIn(0, units.size - 1)
     return String.format(java.util.Locale.US, "%.1f %s", bytes / Math.pow(1024.toDouble(), digitGroups.toDouble()), units[digitGroups])
-}
-
-private fun getRealPathFromUri(context: Context, contentUri: Uri): String? {
-    if (contentUri.scheme == "file") return contentUri.path
-    var cursor: android.database.Cursor? = null
-    try {
-        val proj = arrayOf(android.provider.MediaStore.Images.Media.DATA)
-        cursor = context.contentResolver.query(contentUri, proj, null, null, null)
-        if (cursor != null && cursor.moveToFirst()) {
-            val columnIndex = cursor.getColumnIndexOrThrow(android.provider.MediaStore.Images.Media.DATA)
-            return cursor.getString(columnIndex)
-        }
-    } catch (e: Exception) {
-        // Fallback
-    } finally {
-        cursor?.close()
-    }
-    return null
 }
