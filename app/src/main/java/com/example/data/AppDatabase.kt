@@ -12,9 +12,6 @@ import com.scholarvault.data.model.*
         Semester::class,
         AcademicDocumentLink::class,
         Transaction::class,
-        UserProfile::class,
-        ProfileExperience::class,
-        ProfileWork::class,
         DocumentFile::class,
         WalletCategory::class,
         WalletCard::class,
@@ -31,7 +28,7 @@ import com.scholarvault.data.model.*
         TransactionAccount::class,
         TransactionItem::class
     ],
-    version = 19,
+    version = 20,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -40,7 +37,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun semesterDao(): SemesterDao
     abstract fun academicDocumentLinkDao(): AcademicDocumentLinkDao
     abstract fun transactionDao(): TransactionDao
-    abstract fun profileDao(): ProfileDao
     abstract fun documentDao(): DocumentDao
     abstract fun walletDao(): WalletDao
     abstract fun taskDao(): TaskDao

@@ -143,16 +143,15 @@ fun GoogleDrivePdfLauncher(filePath: String, onBack: () -> Unit) {
                 val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
                     setDataAndType(uri, "application/pdf")
                     addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    setPackage("com.google.android.apps.docs")
                 }
-                try { context.startActivity(intent) }
-                catch (e: Exception) {
-                    context.startActivity(android.content.Intent.createChooser(
-                        android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-                            setDataAndType(uri, "application/pdf")
-                            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        }, "Open PDF"))
+                val chooser = android.content.Intent.createChooser(intent, "Open PDF")
+                val resInfoList = context.packageManager.queryIntentActivities(chooser, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+                for (resolveInfo in resInfoList) {
+                    val packageName = resolveInfo.activityInfo.packageName
+                    context.grantUriPermission(packageName, uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
+                try { context.startActivity(chooser) }
+                catch (e: Exception) { loadError = "Error: ${e.message}" }
                 launched = true
                 withContext(Dispatchers.Main) { onBack() }
             } catch (e: Exception) { loadError = "Error: ${e.message}" }

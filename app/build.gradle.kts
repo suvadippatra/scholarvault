@@ -139,6 +139,8 @@ dependencies {
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
 
+  implementation("com.google.code.gson:gson:2.11.0")
+
   // CameraX
   implementation(libs.androidx.camera.camera2)
   implementation(libs.androidx.camera.lifecycle)

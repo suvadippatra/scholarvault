@@ -311,6 +311,34 @@ fun SettingsScreen(
                 }
 
                 item {
+                    SettingClickItem(
+                        title = "Clear Document Scanner Drafts",
+                        subtitle = "Deletes unsaved scanned pages and partial sessions",
+                        onClick = {
+                            scope.launch {
+                                val prefs = context.getSharedPreferences("scanner_draft", android.content.Context.MODE_PRIVATE)
+                                val savedDraftStr = prefs.getString("draft_uris", null)
+                                if (savedDraftStr != null) {
+                                    try {
+                                        val array = org.json.JSONArray(savedDraftStr)
+                                        for (i in 0 until array.length()) {
+                                            val uri = android.net.Uri.parse(array.getString(i))
+                                            uri.path?.let { java.io.File(it).delete() }
+                                        }
+                                    } catch (e: Exception) {}
+                                }
+                                prefs.edit().remove("draft_uris").apply()
+                                
+                                val draftsDir = java.io.File(context.cacheDir, "scanner_drafts")
+                                if (draftsDir.exists()) draftsDir.deleteRecursively()
+                                
+                                android.widget.Toast.makeText(context, "Scanner drafts cleared", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    )
+                }
+
+                item {
                     androidx.compose.material3.HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
                 }
 

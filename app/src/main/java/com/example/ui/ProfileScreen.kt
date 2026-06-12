@@ -7,6 +7,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.drawscope.withTransform
@@ -43,6 +45,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -149,6 +153,7 @@ fun ProfileScreen(
     var isEditingMode by remember { mutableStateOf(false) }
     var profile by remember { mutableStateOf(dbProfile) }
     var showDiscardDialog by remember { mutableStateOf(false) }
+    var showHelpDialog by remember { mutableStateOf(false) }
 
     val hasChanges = remember(profile, dbProfile) { profile != dbProfile }
 
@@ -202,6 +207,13 @@ fun ProfileScreen(
         )
     }
 
+    if (showHelpDialog) {
+        ProfileInstructionsSheet(
+            onDismiss = { showHelpDialog = false },
+            isDark = isDark
+        )
+    }
+
     Scaffold(
         containerColor = bgColor,
         topBar = {
@@ -224,6 +236,13 @@ fun ProfileScreen(
                 showProfileIcon = false,
                 showSearchBar = false
             ) {
+                IconButton(onClick = { showHelpDialog = true }) {
+                    Icon(
+                        Icons.Default.HelpOutline, 
+                        contentDescription = "Help",
+                        tint = if (isDark) Color.White else Color.Black
+                    )
+                }
                 IconButton(onClick = { 
                     if (isEditingMode) {
                         viewModel.updateProfile(profile)
@@ -254,132 +273,130 @@ fun ProfileScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 contentPadding = PaddingValues(top = 16.dp, bottom = 100.dp)
             ) {
-                // Shared Header (Profile Pic, Name, Address) for both View & Edit modes
-                item {
-                    HeaderCard(
-                        profile = profile, 
-                        isEditingMode = isEditingMode, 
-                        onProfileUpdate = { updatedProfile ->
-                            profile = updatedProfile
-                            if (!isEditingMode) {
-                                viewModel.updateProfile(updatedProfile)
-                            }
-                        },
-                        textColor = textColor
-                    )
-                }
-                
-                item { Spacer(modifier = Modifier.height(16.dp)) }
-
-                if (isEditingMode || showMoreDetails) {
+                if (!isEditingMode) {
                     item {
-                        ProfileSectionCard(title = "1. Core Identity & Demographics", isExpandedDefault = true, forceExpand = isEditingMode) {
-                            ProfileField("First Name", profile.firstName, isEditingMode) { profile = profile.copy(firstName = it) }
-                            ProfileField("Middle Name", profile.middleName, isEditingMode) { profile = profile.copy(middleName = it) }
-                            ProfileField("Last Name", profile.lastName, isEditingMode) { profile = profile.copy(lastName = it) }
-                            ProfileDateField("Date of Birth", profile.dateOfBirth, isEditingMode) { profile = profile.copy(dateOfBirth = it) }
-                            ProfileDropdownField("Gender", profile.gender, listOf("Male", "Female", "Other"), isEditingMode) { profile = profile.copy(gender = it) }
-                            ProfileField("Mother Tongue", profile.motherTongue, isEditingMode) { profile = profile.copy(motherTongue = it) }
-                            ProfileDropdownField("Marital Status", profile.maritalStatus, listOf("Single", "Married", "Divorced", "Widowed"), isEditingMode) { profile = profile.copy(maritalStatus = it) }
-                            ProfileDropdownField("Caste", profile.caste, listOf("General", "OBC", "SC", "ST", "Other"), isEditingMode) { profile = profile.copy(caste = it) }
-                            ProfileDropdownField("Religion", profile.religion, listOf("Hinduism", "Islam", "Christianity", "Sikhism", "Buddhism", "Jainism", "Other"), isEditingMode) { profile = profile.copy(religion = it) }
-                            CustomFieldsSection("Identity", profile, isEditingMode) { profile = it }
+                        ProfileViewDashboard(
+                            profile = dbProfile,
+                            experiences = experiences,
+                            works = works,
+                            isDark = isDark,
+                            textColor = textColor
+                        )
+                    }
+                } else {
+                    item {
+                        HeaderCard(
+                            profile = profile, 
+                            isEditingMode = true, 
+                            onProfileUpdate = { updatedProfile ->
+                                profile = updatedProfile
+                            },
+                            textColor = textColor
+                        )
+                    }
+                    
+                    item { Spacer(modifier = Modifier.height(16.dp)) }
+
+                    item {
+                        ProfileSectionCard(title = "1. Core Identity & Demographics", isExpandedDefault = true, forceExpand = true) {
+                            ProfileField("First Name", profile.firstName, true, icon = Icons.Default.Person) { profile = profile.copy(firstName = it) }
+                            ProfileField("Middle Name", profile.middleName, true, icon = Icons.Default.Person) { profile = profile.copy(middleName = it) }
+                            ProfileField("Last Name", profile.lastName, true, icon = Icons.Default.Person) { profile = profile.copy(lastName = it) }
+                            ProfileDateField("Date of Birth", profile.dateOfBirth, true, icon = Icons.Default.DateRange) { profile = profile.copy(dateOfBirth = it) }
+                            ProfileDropdownField("Gender", profile.gender, listOf("Male", "Female", "Other"), true, icon = Icons.Default.Person) { profile = profile.copy(gender = it) }
+                            ProfileField("Mother Tongue", profile.motherTongue, true, icon = Icons.Default.MenuBook) { profile = profile.copy(motherTongue = it) }
+                            ProfileDropdownField("Marital Status", profile.maritalStatus, listOf("Single", "Married", "Divorced", "Widowed"), true, icon = Icons.Default.Favorite) { profile = profile.copy(maritalStatus = it) }
+                            ProfileDropdownField("Caste", profile.caste, listOf("General", "OBC", "SC", "ST", "Other"), true, icon = Icons.Default.Info) { profile = profile.copy(caste = it) }
+                            ProfileDropdownField("Religion", profile.religion, listOf("Hinduism", "Islam", "Christianity", "Sikhism", "Buddhism", "Jainism", "Other"), true, icon = Icons.Default.Info) { profile = profile.copy(religion = it) }
+                            CustomFieldsSection("Identity", profile, true) { profile = it }
                         }
                     }
 
                     item {
-                        ProfileSectionCard(title = "2. Contact & Domicile Information", isExpandedDefault = false, forceExpand = isEditingMode) {
-                            ProfileField("Mobile Number", profile.mobileNumber, isEditingMode, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)) { profile = profile.copy(mobileNumber = it) }
-                            ProfileField("WhatsApp Number", profile.whatsappNumber, isEditingMode, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)) { profile = profile.copy(whatsappNumber = it) }
-                            ProfileField("Email", profile.email, isEditingMode) { profile = profile.copy(email = it) }
-                            ProfileField("Present Address", profile.presentAddress, isEditingMode, false) { profile = profile.copy(presentAddress = it) }
-                            if (isEditingMode) {
-                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                                    Checkbox(
-                                        checked = profile.isPermanentSameAsPresent,
-                                        onCheckedChange = { profile = profile.copy(isPermanentSameAsPresent = it) }
-                                    )
-                                    Text("Permanent address is same as present")
-                                }
-                            } else if (profile.isPermanentSameAsPresent) {
-                                Text("Permanent address same as present", color = Color.Gray, fontSize = 14.sp, modifier = Modifier.padding(bottom = 8.dp))
+                        ProfileSectionCard(title = "2. Contact & Domicile Information", isExpandedDefault = false, forceExpand = true) {
+                            ProfileField("Mobile Number", profile.mobileNumber, true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), icon = Icons.Default.Phone) { profile = profile.copy(mobileNumber = it) }
+                            ProfileField("WhatsApp Number", profile.whatsappNumber, true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), icon = Icons.Default.Phone) { profile = profile.copy(whatsappNumber = it) }
+                            ProfileField("Email", profile.email, true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email), icon = Icons.Default.Email) { profile = profile.copy(email = it) }
+                            ProfileField("Present Address", profile.presentAddress, true, singleLine = false, icon = Icons.Default.Home) { profile = profile.copy(presentAddress = it) }
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                                Checkbox(
+                                    checked = profile.isPermanentSameAsPresent,
+                                    onCheckedChange = { profile = profile.copy(isPermanentSameAsPresent = it) }
+                                )
+                                Text("Permanent address is same as present")
                             }
-                            if (!profile.isPermanentSameAsPresent || isEditingMode) {
-                                ProfileField("Permanent Address", if(profile.isPermanentSameAsPresent) profile.presentAddress else profile.permanentAddress, isEditingMode, false) { profile = profile.copy(permanentAddress = it) }
+                            if (!profile.isPermanentSameAsPresent) {
+                                ProfileField("Permanent Address", profile.permanentAddress, true, singleLine = false, icon = Icons.Default.Home) { profile = profile.copy(permanentAddress = it) }
                             }
-                            CustomFieldsSection("Contact", profile, isEditingMode) { profile = it }
+                            CustomFieldsSection("Contact", profile, true) { profile = it }
                         }
                     }
 
                     item {
-                        ProfileSectionCard(title = "3. Guardianship & Emergency", isExpandedDefault = false, forceExpand = isEditingMode) {
-                            ProfileField("Primary Guardian Name", profile.guardianName, isEditingMode) { profile = profile.copy(guardianName = it) }
-                            ProfileField("Relationship to Student", profile.guardianRelationship, isEditingMode) { profile = profile.copy(guardianRelationship = it) }
-                            ProfileField("Guardian's Contact", profile.guardianNumber, isEditingMode, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)) { profile = profile.copy(guardianNumber = it) }
-                            ProfileField("Father's Name", profile.fatherName, isEditingMode) { profile = profile.copy(fatherName = it) }
-                            ProfileField("Mother's Name", profile.motherName, isEditingMode) { profile = profile.copy(motherName = it) }
-                            ProfileField("Family Income (Monthly)", profile.familyIncome, isEditingMode, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)) { profile = profile.copy(familyIncome = it) }
-                            ProfileField("Emergency Contact", profile.emergencyContact, isEditingMode, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)) { profile = profile.copy(emergencyContact = it) }
-                            CustomFieldsSection("Guardianship", profile, isEditingMode) { profile = it }
+                        ProfileSectionCard(title = "3. Guardianship & Emergency", isExpandedDefault = false, forceExpand = true) {
+                            ProfileField("Primary Guardian Name", profile.guardianName, true, icon = Icons.Default.Person) { profile = profile.copy(guardianName = it) }
+                            ProfileField("Relationship to Student", profile.guardianRelationship, true, icon = Icons.Default.Info) { profile = profile.copy(guardianRelationship = it) }
+                            ProfileField("Guardian's Contact", profile.guardianNumber, true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), icon = Icons.Default.Phone) { profile = profile.copy(guardianNumber = it) }
+                            ProfileField("Father's Name", profile.fatherName, true, icon = Icons.Default.Person) { profile = profile.copy(fatherName = it) }
+                            ProfileField("Mother's Name", profile.motherName, true, icon = Icons.Default.Person) { profile = profile.copy(motherName = it) }
+                            ProfileField("Family Income (Monthly)", profile.familyIncome, true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), icon = Icons.Default.Info) { profile = profile.copy(familyIncome = it) }
+                            ProfileField("Emergency Contact", profile.emergencyContact, true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), icon = Icons.Default.Phone) { profile = profile.copy(emergencyContact = it) }
+                            CustomFieldsSection("Guardianship", profile, true) { profile = it }
                         }
                     }
 
                     item {
-                        ProfileSectionCard(title = "4. Academic & Research Footprint", isExpandedDefault = false, forceExpand = isEditingMode) {
-                            ProfileField("Professional Summary", profile.professionalSummary, isEditingMode, false) { profile = profile.copy(professionalSummary = it) }
+                        ProfileSectionCard(title = "4. Academic & Research Footprint", isExpandedDefault = false, forceExpand = true) {
+                            ProfileField("Professional Summary", profile.professionalSummary, true, singleLine = false, icon = Icons.Default.Info) { profile = profile.copy(professionalSummary = it) }
                             
                             val links = remember(profile.socialLinksJson) { parseSocialLinks(profile.socialLinksJson) }
-                            if (isEditingMode) {
-                                Text("Social Links", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
-                                links.forEach { link ->
-                                    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(link.platform, fontWeight = FontWeight.Bold)
-                                            Text(link.url, fontSize = 12.sp, color = Color.Gray)
-                                        }
-                                        IconButton(onClick = {
-                                            val newLinks = links.filter { it != link }
-                                            profile = profile.copy(socialLinksJson = saveSocialLinks(newLinks))
-                                        }) {
-                                            Icon(Icons.Default.Delete, tint = Color.Red, contentDescription = "Delete Link")
-                                        }
+                            Text("Social Links", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+                            links.forEach { link ->
+                                Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(link.platform, fontWeight = FontWeight.Bold)
+                                        Text(link.url, fontSize = 12.sp, color = Color.Gray)
+                                    }
+                                    IconButton(onClick = {
+                                        val newLinks = links.filter { it != link }
+                                        profile = profile.copy(socialLinksJson = saveSocialLinks(newLinks))
+                                    }) {
+                                        Icon(Icons.Default.Delete, tint = Color.Red, contentDescription = "Delete Link")
                                     }
                                 }
-                                var showAddLinkDialog by remember { mutableStateOf(false) }
-                                if (showAddLinkDialog) {
-                                    var platform by remember { mutableStateOf("") }
-                                    var url by remember { mutableStateOf("") }
-                                    AlertDialog(
-                                        onDismissRequest = { showAddLinkDialog = false },
-                                        title = { Text("Add Link") },
-                                        text = {
-                                            Column {
-                                                OutlinedTextField(value = platform, onValueChange = { platform = it }, label = { Text("Platform (e.g. LinkedIn, GitHub)") }, shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth())
-                                                OutlinedTextField(value = url, onValueChange = { url = it }, label = { Text("Link URL") }, shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth())
-                                            }
-                                        },
-                                        confirmButton = {
-                                            TextButton(onClick = {
-                                                val newLinks = links.toMutableList()
-                                                newLinks.add(SocialLink(platform, url))
-                                                profile = profile.copy(socialLinksJson = saveSocialLinks(newLinks))
-                                                showAddLinkDialog = false
-                                            }) { Text("Add") }
-                                        }
-                                    )
-                                }
-                                TextButton(onClick = { showAddLinkDialog = true }) {
-                                    Text("+ Add Link")
-                                }
                             }
-                            CustomFieldsSection("Academic", profile, isEditingMode) { profile = it }
+                            var showAddLinkDialog by remember { mutableStateOf(false) }
+                            if (showAddLinkDialog) {
+                                var platform by remember { mutableStateOf("") }
+                                var url by remember { mutableStateOf("") }
+                                AlertDialog(
+                                    onDismissRequest = { showAddLinkDialog = false },
+                                    title = { Text("Add Link") },
+                                    text = {
+                                        Column {
+                                            OutlinedTextField(value = platform, onValueChange = { platform = it }, label = { Text("Platform (e.g. LinkedIn, GitHub)") }, shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth())
+                                            OutlinedTextField(value = url, onValueChange = { url = it }, label = { Text("Link URL") }, shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth())
+                                        }
+                                    },
+                                    confirmButton = {
+                                        TextButton(onClick = {
+                                            val newLinks = links.toMutableList()
+                                            newLinks.add(SocialLink(platform, url))
+                                            profile = profile.copy(socialLinksJson = saveSocialLinks(newLinks))
+                                            showAddLinkDialog = false
+                                        }) { Text("Add") }
+                                    }
+                                )
+                            }
+                            TextButton(onClick = { showAddLinkDialog = true }) {
+                                Text("+ Add Link")
+                            }
+                            CustomFieldsSection("Academic", profile, true) { profile = it }
                         }
                     }
-                }
 
-                if (isEditingMode) {
                     item {
-                        ProfileSectionCard(title = "5. Edit Experiences & Works", isExpandedDefault = false, forceExpand = isEditingMode) {
+                        ProfileSectionCard(title = "5. Edit Experiences & Works", isExpandedDefault = false, forceExpand = true) {
                             Text("Experiences", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
                             experiences.forEach { exp ->
                                 Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -411,111 +428,320 @@ fun ProfileScreen(
                             AddWorkButton(onAdd = { t, d, w -> viewModel.addWork(t, d, w) })
                         }
                     }
-                } else {
-                    item { Spacer(modifier = Modifier.height(16.dp)) }
-
-                    item {
-                        Surface(
-                            color = cardBg,
-                            shape = RoundedCornerShape(16.dp),
-                            modifier = Modifier.fillMaxWidth().clickable { showMoreDetails = !showMoreDetails }
-                        ) {
-                            Text(
-                                text = if (showMoreDetails) "Hide details..." else "View more details...", 
-                                modifier = Modifier.padding(16.dp), 
-                                color = textColor, 
-                                fontSize = 14.sp,
-                                textAlign = TextAlign.Center
-                            )
-                        }
-                    }
-
-                    item { Spacer(modifier = Modifier.height(16.dp)) }
-
-                    if (experiences.isNotEmpty()) {
-                        item {
-                            Text("My Experiences", fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.padding(start = 8.dp, bottom = 8.dp))
-                        }
-                        
-                        item {
-                            Surface(
-                                color = cardBg,
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                                    experiences.forEachIndexed { index, exp ->
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                           Column {
-                                               Text(exp.role, fontSize = 16.sp, color = textColor)
-                                               androidx.compose.material3.Text(
-                                                   text = androidx.compose.ui.text.buildAnnotatedString {
-                                                       append("at ")
-                                                       withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(exp.location) }
-                                                   }, 
-                                                   fontSize = 16.sp, 
-                                                   color = textColor
-                                               )
-                                           }
-                                           Text(exp.duration, fontSize = 14.sp, color = textColor)
-                                        }
-                                        if (index < experiences.size - 1) {
-                                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = Color.Gray.copy(alpha = 0.2f))
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        item { Spacer(modifier = Modifier.height(16.dp)) }
-                    }
-
-                    if (works.isNotEmpty()) {
-                        item {
-                            Text("My Works", fontWeight = FontWeight.Bold, fontSize = 20.sp, modifier = Modifier.padding(start = 8.dp, bottom = 8.dp))
-                        }
-                        item {
-                            Surface(
-                                color = cardBg,
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                                    works.forEachIndexed { index, work ->
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Column {
-                                                Text(work.title, fontSize = 16.sp, color = textColor)
-                                                Text("On ${work.date}", fontSize = 14.sp, color = Color.Gray)
-                                            }
-                                            if (work.isWebLink) {
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    Icon(Icons.Default.Build, contentDescription = "Code", tint = textColor, modifier = Modifier.size(24.dp).padding(end = 4.dp))
-                                                    Icon(Icons.Default.Language, contentDescription = "Web", tint = textColor, modifier = Modifier.size(24.dp))
-                                                }
-                                            } else {
-                                                Icon(Icons.Default.Image, contentDescription = "Graphics", tint = textColor, modifier = Modifier.size(32.dp))
-                                            }
-                                        }
-                                        if (index < works.size - 1) {
-                                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = Color.Gray.copy(alpha = 0.2f))
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
                 }
 
                 item { Spacer(modifier = Modifier.height(32.dp)) }
             }
         }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun ProfileViewDashboard(
+    profile: UserProfile,
+    experiences: List<ProfileExperience>,
+    works: List<ProfileWork>,
+    isDark: Boolean,
+    textColor: Color
+) {
+    val cardBg = if (isDark) Color(0xFF2A2A2A) else Color(0xFFFFFFFF)
+    val dividerColor = if (isDark) Color(0xFF444444) else Color(0xFFE0E0E0)
+    val animationsEnabled = LocalThemeController.current.animationsEnabled
+    
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Header
+        ElevatedCard(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.elevatedCardColors(containerColor = cardBg),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.size(100.dp)
+                ) {
+                    if (profile.profilePicUri != null) {
+                        CachedImage(
+                            uri = Uri.parse(profile.profilePicUri),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Icon(
+                            Icons.Default.Person,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(24.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                val fullName = listOf(profile.firstName, profile.middleName, profile.lastName).filter { it.isNotBlank() }.joinToString(" ")
+                
+                if (fullName.isNotBlank()) {
+                    Text(
+                        text = fullName,
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = textColor,
+                        textAlign = TextAlign.Center
+                    )
+                } else {
+                    Text(
+                        text = "Student",
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = textColor,
+                        textAlign = TextAlign.Center
+                    )
+                }
+
+                val metaItems = listOf(profile.gender, profile.dateOfBirth).filter { it.isNotBlank() }
+                if (metaItems.isNotEmpty()) {
+                    Text(
+                        text = metaItems.joinToString(" • "),
+                        fontSize = 14.sp,
+                        color = Color.Gray,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+            }
+        }
+        
+        // Responsive Grid
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            maxItemsInEachRow = 2
+        ) {
+            val cellModifier = Modifier.weight(1f).fillMaxWidth()
+
+            // 1. Identity
+            val identityContent = listOf(
+                "Mother Tongue" to profile.motherTongue,
+                "Marital Status" to profile.maritalStatus,
+                "Caste" to profile.caste,
+                "Religion" to profile.religion
+            ).filter { it.second.isNotBlank() }
+
+            if (identityContent.isNotEmpty()) {
+                ViewModeCard("Core Identity", cardBg, textColor, cellModifier, animationsEnabled, 0) {
+                    identityContent.forEach { (lbl, currVal) ->
+                        ViewModeField(lbl, currVal, textColor)
+                    }
+                }
+            }
+
+            // 2. Contact & Address
+            val address = if (profile.presentAddress.isNotBlank()) profile.presentAddress else if (profile.permanentAddress.isNotBlank()) profile.permanentAddress else ""
+            val contactContent = listOf(
+                "Mobile" to profile.mobileNumber,
+                "WhatsApp" to profile.whatsappNumber,
+                "Email" to profile.email,
+                "Address" to address
+            ).filter { it.second.isNotBlank() }
+
+            if (contactContent.isNotEmpty()) {
+                ViewModeCard("Contact & Domicile", cardBg, textColor, cellModifier, animationsEnabled, 1) {
+                    contactContent.forEach { (lbl, currVal) ->
+                        ViewModeField(lbl, currVal, textColor)
+                    }
+                }
+            }
+            
+            // 3. Guardianship
+            val guardianshipContent = listOf(
+                "Guardian" to (if (profile.guardianName.isNotBlank() && profile.guardianRelationship.isNotBlank()) "${profile.guardianName} (${profile.guardianRelationship})" else profile.guardianName),
+                "Contact" to profile.guardianNumber,
+                "Father" to profile.fatherName,
+                "Mother" to profile.motherName,
+                "Family Income" to if (profile.familyIncome.isNotBlank()) "₹${profile.familyIncome}" else "",
+                "Emergency" to profile.emergencyContact
+            ).filter { it.second.isNotBlank() }
+
+            if (guardianshipContent.isNotEmpty()) {
+                ViewModeCard("Guardianship", cardBg, textColor, cellModifier, animationsEnabled, 2) {
+                    guardianshipContent.forEach { (lbl, currVal) ->
+                        ViewModeField(lbl, currVal, textColor)
+                    }
+                }
+            }
+
+            // 4. Custom Fields (if any)
+            val customFields = parseCustomFields(profile.customFieldsJson)
+            if (customFields.isNotEmpty()) {
+                ViewModeCard("Additional Details", cardBg, textColor, Modifier.fillMaxWidth(), animationsEnabled, 3) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        maxItemsInEachRow = 2
+                    ) {
+                        customFields.forEach {
+                            ViewModeField(it.paramName, it.paramValue, textColor, Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+        }
+
+        val links = remember(profile.socialLinksJson) { parseSocialLinks(profile.socialLinksJson) }
+        val profSummary = profile.professionalSummary.trim()
+        
+        if (profSummary.isNotBlank() || links.isNotEmpty()) {
+            ViewModeCard("Academic & Professional Summary", cardBg, textColor, Modifier.fillMaxWidth(), animationsEnabled, 4) {
+                if (profSummary.isNotBlank()) {
+                    Text(
+                        text = profSummary,
+                        fontSize = 15.sp,
+                        lineHeight = 22.sp,
+                        color = textColor,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                }
+
+                if (links.isNotEmpty()) {
+                    Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        links.forEach { link ->
+                             val platLower = link.platform.lowercase()
+                             val col = when {
+                                 platLower.contains("linkedin") -> Color(0xFF0077B5)
+                                 platLower.contains("github") -> Color(0xFF333333)
+                                 platLower.contains("orcid") -> Color(0xFFA6CE39)
+                                 platLower.contains("scholar") -> Color(0xFF4285F4)
+                                 platLower.contains("instagram") -> Color(0xFFC13584)
+                                 platLower.contains("twit") || platLower.contains("x") -> Color(0xFF1DA1F2)
+                                 platLower.contains("face") -> Color(0xFF1877F2)
+                                 platLower.contains("you") -> Color(0xFFFF0000)
+                                 else -> Color.Gray
+                             }
+                             val context = LocalContext.current
+                             val handler = androidx.compose.ui.platform.LocalUriHandler.current
+                             Box(
+                                 modifier = Modifier
+                                     .size(40.dp)
+                                     .clip(CircleShape)
+                                     .background(col)
+                                     .clickable { try { handler.openUri(link.url) } catch(e: Exception){} },
+                                 contentAlignment = Alignment.Center
+                             ) {
+                                 Icon(Icons.Default.Link, contentDescription = link.platform, tint = Color.White, modifier = Modifier.size(20.dp))
+                             }
+                        }
+                    }
+                }
+            }
+        }
+        
+        if (experiences.isNotEmpty()) {
+            ViewModeCard("Experience", cardBg, textColor, Modifier.fillMaxWidth(), animationsEnabled, 5) {
+                experiences.forEachIndexed { index, exp ->
+                    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        Text(exp.role, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = textColor)
+                        Text("${exp.location} • ${exp.duration}", fontSize = 14.sp, color = Color.Gray)
+                    }
+                    if (index < experiences.size - 1) {
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = dividerColor)
+                    }
+                }
+            }
+        }
+
+        if (works.isNotEmpty()) {
+            ViewModeCard("Works & Projects", cardBg, textColor, Modifier.fillMaxWidth(), animationsEnabled, 6) {
+                works.forEachIndexed { index, work ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text(work.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = textColor)
+                            Text(work.date, fontSize = 14.sp, color = Color.Gray)
+                        }
+                        Icon(if (work.isWebLink) Icons.Default.Language else Icons.Default.Image, contentDescription = "Work Type", tint = Color.Gray, modifier = Modifier.size(24.dp))
+                    }
+                    if (index < works.size - 1) {
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = dividerColor)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ViewModeCard(
+    title: String,
+    cardBg: Color,
+    textColor: Color,
+    modifier: Modifier = Modifier,
+    animationsEnabled: Boolean = false,
+    index: Int = 0,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    var visible by remember { mutableStateOf(!animationsEnabled) }
+    
+    LaunchedEffect(animationsEnabled) {
+        if (animationsEnabled) {
+            delay(100 + index * 100L)
+            visible = true
+        }
+    }
+
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(animationSpec = tween(400)) + slideInVertically(
+            initialOffsetY = { 50 },
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessLow
+            )
+        ) + scaleIn(
+            initialScale = 0.95f,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessLow
+            )
+        ),
+        modifier = modifier
+    ) {
+        ElevatedCard(
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.elevatedCardColors(containerColor = cardBg),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    title,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = textColor,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+                content()
+            }
+        }
+    }
+}
+
+@Composable
+fun ViewModeField(label: String, value: String, textColor: Color, modifier: Modifier = Modifier) {
+    Column(modifier = modifier.padding(bottom = 12.dp)) {
+        Text(label, fontSize = 12.sp, color = Color.Gray, fontWeight = FontWeight.Medium)
+        Text(value, fontSize = 15.sp, color = textColor, modifier = Modifier.padding(top = 2.dp))
     }
 }
 
@@ -577,32 +803,28 @@ fun copyUriToInternalStorage(context: android.content.Context, uri: Uri, prefix:
 enum class CropState {
     IDLE,
     CROPPING,
-    COMPRESSING,
-    SUCCESS
+    COMPRESSING
 }
 
 fun performBitmapCrop(
     bmp: android.graphics.Bitmap,
     scale: Float,
     offset: androidx.compose.ui.geometry.Offset,
+    rotation: Float,
     screenSize: androidx.compose.ui.geometry.Size,
-    viewportSize: androidx.compose.ui.geometry.Size,
-    cropType: String
+    viewportSize: androidx.compose.ui.geometry.Size
 ): android.graphics.Bitmap {
     val canvasWidth = screenSize.width
     val canvasHeight = screenSize.height
 
-    val viewportWidth = viewportSize.width
-    val viewportHeight = viewportSize.height
+    val viewportWidth = viewportSize.width.toInt().coerceAtLeast(1)
+    val viewportHeight = viewportSize.height.toInt().coerceAtLeast(1)
 
-    val left = (canvasWidth - viewportWidth) / 2f
-    val top = (canvasHeight - viewportHeight) / 2f
-    val right = left + viewportWidth
-    val bottom = top + viewportHeight
+    val csX = canvasWidth / 2f
+    val csY = canvasHeight / 2f
 
     val imageWidth = bmp.width.toFloat()
     val imageHeight = bmp.height.toFloat()
-
     val scaleFitX = canvasWidth / imageWidth
     val scaleFitY = canvasHeight / imageHeight
     val initialScale = minOf(scaleFitX, scaleFitY)
@@ -610,30 +832,23 @@ fun performBitmapCrop(
     val startX = (canvasWidth - imageWidth * initialScale) / 2f
     val startY = (canvasHeight - imageHeight * initialScale) / 2f
 
-    val csX = canvasWidth / 2f
-    val csY = canvasHeight / 2f
+    val resultBitmap = android.graphics.Bitmap.createBitmap(viewportWidth, viewportHeight, android.graphics.Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(resultBitmap)
+    canvas.drawColor(android.graphics.Color.WHITE)
 
-    fun getPixelU(x: Float): Float {
-        val uPrime = (x - offset.x - csX) / scale + csX
-        return (uPrime - startX) / initialScale
-    }
+    canvas.translate(-(canvasWidth - viewportWidth) / 2f, -(canvasHeight - viewportHeight) / 2f)
+    canvas.translate(offset.x, offset.y)
+    canvas.scale(scale, scale, csX, csY)
+    canvas.rotate(rotation, csX, csY)
 
-    fun getPixelV(y: Float): Float {
-        val vPrime = (y - offset.y - csY) / scale + csY
-        return (vPrime - startY) / initialScale
-    }
+    canvas.translate(startX, startY)
+    canvas.scale(initialScale, initialScale)
 
-    val uLeftVal = getPixelU(left)
-    val vTopVal = getPixelV(top)
-    val uRightVal = getPixelU(right)
-    val vBottomVal = getPixelV(bottom)
+    canvas.drawBitmap(bmp, 0f, 0f, android.graphics.Paint().apply {
+        isFilterBitmap = true
+    })
 
-    val cropX = maxOf(0, uLeftVal.toInt()).coerceAtMost(bmp.width - 2)
-    val cropY = maxOf(0, vTopVal.toInt()).coerceAtMost(bmp.height - 2)
-    val cropW = (uRightVal - uLeftVal).toInt().coerceIn(2, bmp.width - cropX)
-    val cropH = (vBottomVal - vTopVal).toInt().coerceIn(2, bmp.height - cropY)
-
-    return android.graphics.Bitmap.createBitmap(bmp, cropX, cropY, cropW, cropH)
+    return resultBitmap
 }
 
 suspend fun compressBitmapToTargetRange(
@@ -807,6 +1022,7 @@ fun HeaderCard(
                 } else {
                     var scale by remember { mutableStateOf(1.0f) }
                     var offset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+                    var rotationState by remember { mutableStateOf(0f) }
                     val density = LocalDensity.current
                     
                     AnimatedVisibility(
@@ -848,9 +1064,10 @@ fun HeaderCard(
                                 .fillMaxWidth()
                                 .clipToBounds()
                                 .pointerInput(Unit) {
-                                    detectTransformGestures { _, pan, zoom, _ ->
+                                    detectTransformGestures { _, pan, zoom, rotationChange ->
                                         scale = (scale * zoom).coerceIn(0.5f, 10.0f)
                                         offset = offset + pan
+                                        rotationState += rotationChange
                                     }
                                 }
                         ) {
@@ -878,6 +1095,7 @@ fun HeaderCard(
                                 withTransform({
                                     translate(offset.x, offset.y)
                                     scale(scale, scale, pivot = androidx.compose.ui.geometry.Offset(csX, csY))
+                                    rotate(rotationState, pivot = androidx.compose.ui.geometry.Offset(csX, csY))
                                 }) {
                                     drawImage(
                                         image = bmp.asImageBitmap(),
@@ -929,24 +1147,39 @@ fun HeaderCard(
                             modifier = Modifier.fillMaxWidth(),
                             color = Color(0xFF121212)
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 24.dp, horizontal = 16.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Button(
-                                    onClick = {
-                                        scale = 1.0f
-                                        offset = androidx.compose.ui.geometry.Offset.Zero
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray)
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(Icons.Default.Refresh, contentDescription = "Reset Zoom")
+                                    Icon(Icons.Default.Refresh, contentDescription = "Tilt", tint = Color.White)
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Reset")
+                                    androidx.compose.material3.Slider(
+                                        value = rotationState,
+                                        onValueChange = { rotationState = it },
+                                        valueRange = -180f..180f,
+                                        modifier = Modifier.weight(1f)
+                                    )
                                 }
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(bottom = 24.dp, top = 8.dp, start = 16.dp, end = 16.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Button(
+                                        onClick = {
+                                            scale = 1.0f
+                                            offset = androidx.compose.ui.geometry.Offset.Zero
+                                            rotationState = 0f
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray)
+                                    ) {
+                                        Icon(Icons.Default.Refresh, contentDescription = "Reset Zoom")
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Reset")
+                                    }
                                 
                                 val view = androidx.compose.ui.platform.LocalView.current
                                 Button(
@@ -971,9 +1204,9 @@ fun HeaderCard(
                                                             bmp = sourceB,
                                                             scale = scale,
                                                             offset = offset,
+                                                            rotation = rotationState,
                                                             screenSize = screenPx,
-                                                            viewportSize = sizePx,
-                                                            cropType = cropType
+                                                            viewportSize = sizePx
                                                         )
                                                     }
                                                     
@@ -1021,7 +1254,8 @@ fun HeaderCard(
                                                     }
                                                 }
                                                 view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
-                                                cropState = CropState.SUCCESS
+                                                activeCropUri = null
+                                                cropState = CropState.IDLE
                                             } catch (e: Exception) {
                                                 e.printStackTrace()
                                                 android.widget.Toast.makeText(context, "Error saving cropped image: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
@@ -1061,76 +1295,12 @@ fun HeaderCard(
                         }
                     }
                 }
-                
-                if (cropState == CropState.SUCCESS) {
-                    var visibleCheck by remember { mutableStateOf(false) }
-                    LaunchedEffect(Unit) {
-                        delay(100)
-                        visibleCheck = true
-                        delay(1800)
-                        visibleCheck = false
-                        delay(300)
-                        activeCropUri = null
-                        cropState = CropState.IDLE
-                    }
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.8f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        AnimatedVisibility(
-                            visible = visibleCheck,
-                            enter = fadeIn(tween(400)) + slideInVertically(initialOffsetY = { it / 3 }, animationSpec = tween(450, delayMillis = 50)),
-                            exit = fadeOut(tween(300)) + slideOutVertically(targetOffsetY = { it / 3 }, animationSpec = tween(300))
-                        ) {
-                            Card(
-                                modifier = Modifier
-                                    .widthIn(max = 340.dp)
-                                    .padding(24.dp),
-                                shape = RoundedCornerShape(24.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surface,
-                                    contentColor = MaterialTheme.colorScheme.onSurface
-                                ),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
-                            ) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 24.dp, vertical = 32.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.CheckCircle,
-                                        contentDescription = "Success",
-                                        tint = Color(0xFF4CAF50),
-                                        modifier = Modifier.size(72.dp)
-                                    )
-                                    Spacer(modifier = Modifier.height(20.dp))
-                                    Text(
-                                        text = "Success!",
-                                        style = MaterialTheme.typography.headlineSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text(
-                                        text = if (cropType == "profile_pic") "Your new profile photo has been set." else "Your new digital signature has been set.",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        textAlign = TextAlign.Center
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
             }
         }
     }
+}
 
-    val contentBox = @Composable {
+val contentBox = @Composable {
         Box(modifier = Modifier.fillMaxWidth().padding(if (isEditingMode) 0.dp else 16.dp), contentAlignment = Alignment.Center) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -1414,7 +1584,7 @@ fun CustomFieldsSection(
     categoryFields.forEach { cf ->
         if (isEditing) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                ProfileField(cf.paramName, cf.paramValue, isEditing = true, modifier = Modifier.weight(1f)) { updatedVal -> 
+                ProfileField(cf.paramName, cf.paramValue, isEditing = true, modifier = Modifier.weight(1f), icon = Icons.Default.Label) { updatedVal -> 
                     val newFields = fields.map { if (it == cf) it.copy(paramValue = updatedVal) else it }
                     onUpdate(profile.copy(customFieldsJson = saveCustomFields(newFields)))
                 }
@@ -1466,6 +1636,7 @@ fun ProfileField(
     singleLine: Boolean = true, 
     modifier: Modifier = Modifier, 
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
     onValueChange: (String) -> Unit
 ) {
     if (isEditing) {
@@ -1481,7 +1652,8 @@ fun ProfileField(
             singleLine = singleLine,
             keyboardOptions = keyboardOptions,
             modifier = modifier.fillMaxWidth().padding(bottom = 8.dp),
-            shape = RoundedCornerShape(24.dp)
+            shape = RoundedCornerShape(12.dp),
+            leadingIcon = icon?.let { { Icon(it, contentDescription = null) } }
         )
     } else {
         if (value.isNotEmpty()) {
@@ -1501,6 +1673,7 @@ fun ProfileDropdownField(
     options: List<String>,
     isEditing: Boolean,
     modifier: Modifier = Modifier,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
     onValueChange: (String) -> Unit
 ) {
     if (isEditing) {
@@ -1515,9 +1688,10 @@ fun ProfileDropdownField(
                 onValueChange = {},
                 readOnly = true,
                 label = { Text(label) },
+                leadingIcon = icon?.let { { Icon(it, contentDescription = null) } },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                 colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
-                shape = RoundedCornerShape(24.dp),
+                shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.menuAnchor().fillMaxWidth()
             )
             ExposedDropdownMenu(
@@ -1547,7 +1721,13 @@ fun ProfileDropdownField(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ProfileDateField(label: String, value: String, isEditing: Boolean, onValueChange: (String) -> Unit) {
+fun ProfileDateField(
+    label: String, 
+    value: String, 
+    isEditing: Boolean, 
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    onValueChange: (String) -> Unit
+) {
     var showDatePicker by remember { mutableStateOf(false) }
     
     if (showDatePicker) {
@@ -1574,23 +1754,19 @@ fun ProfileDateField(label: String, value: String, isEditing: Boolean, onValueCh
     }
 
     if (isEditing) {
-        val interactionSource = remember { MutableInteractionSource() }
-        val isPressed by interactionSource.collectIsPressedAsState()
+        var text by remember(isEditing) { mutableStateOf(value) }
         
-        LaunchedEffect(isPressed) {
-            if (isPressed) {
-                showDatePicker = true
-            }
-        }
-
         OutlinedTextField(
-            value = value,
-            onValueChange = {},
+            value = text,
+            onValueChange = { 
+                text = it
+                onValueChange(it) 
+            },
             label = { Text(label) },
-            readOnly = true,
-            interactionSource = interactionSource,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            leadingIcon = icon?.let { { Icon(it, contentDescription = null) } },
             modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-            shape = RoundedCornerShape(24.dp),
+            shape = RoundedCornerShape(12.dp),
             trailingIcon = {
                 IconButton(onClick = { showDatePicker = true }) {
                     Icon(Icons.Default.DateRange, contentDescription = "Select Date")

@@ -23,6 +23,18 @@ object FilterEngine {
         val paint = Paint()
         val matrix = ColorMatrix()
         matrix.setSaturation(0f)
+        
+        // Slight contrast bump for Grayscale
+        val contrast = 1.2f
+        val brightness = 5f
+        val contrastMatrix = ColorMatrix(floatArrayOf(
+            contrast, 0f, 0f, 0f, brightness,
+            0f, contrast, 0f, 0f, brightness,
+            0f, 0f, contrast, 0f, brightness,
+            0f, 0f, 0f, 1f, 0f
+        ))
+        matrix.postConcat(contrastMatrix)
+        
         paint.colorFilter = ColorMatrixColorFilter(matrix)
         canvas.drawBitmap(bitmap, 0f, 0f, paint)
         return bmp
@@ -34,9 +46,9 @@ object FilterEngine {
         val paint = Paint()
         val matrix = ColorMatrix()
         
-        // Increase contrast and mildly bump saturation
-        val contrast = 1.3f
-        val brightness = -10f
+        // Enhance text contrast (1.5x) and bump white point (brightness +30)
+        val contrast = 1.5f
+        val brightness = 30f
         val colorMatrix = floatArrayOf(
             contrast, 0f, 0f, 0f, brightness,
             0f, contrast, 0f, 0f, brightness,
@@ -45,16 +57,13 @@ object FilterEngine {
         )
         matrix.postConcat(ColorMatrix(colorMatrix))
         
+        // Saturate colors
         val satMatrix = ColorMatrix()
-        satMatrix.setSaturation(1.2f)
+        satMatrix.setSaturation(1.4f)
         matrix.postConcat(satMatrix)
         
         paint.colorFilter = ColorMatrixColorFilter(matrix)
         canvas.drawBitmap(bitmap, 0f, 0f, paint)
-        
-        // Simple unsharp mask approximation can be expensive in Java,
-        // so we'll stick to a contrast + saturation boost for "Magic Enhance"
-        // as a fast approximation.
         
         return bmp
     }
@@ -89,11 +98,11 @@ object FilterEngine {
             }
         }
 
-        // Window size for local thresholding: typically 1/8 to 1/16 of the image dimension
-        val s = width / 16
+        // Aggressive Window size for crisp ink strokes
+        val s = width / 12
         val outPixels = IntArray(width * height)
-        // Tune this value to avoid turning dark corners completely black (e.g. 0.85 = 15% darker than average)
-        val t = 0.85f
+        // Aggressive thresholding to clear background to pure white
+        val t = 0.90f
 
         for (i in 0 until height) {
             for (j in 0 until width) {

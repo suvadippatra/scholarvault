@@ -1,15 +1,6 @@
 package com.scholarvault.data.model
 
-import androidx.room.Entity
-import androidx.room.PrimaryKey
-import androidx.room.ForeignKey
-import androidx.room.Index
-import androidx.room.Embedded
-import androidx.room.Relation
-
-@Entity(tableName = "user_profile")
 data class UserProfile(
-    @PrimaryKey
     val id: String = "CURRENT_USER",
     val profilePicUri: String? = null,
     val digitalSignUri: String? = null,
@@ -57,20 +48,7 @@ data class UserProfile(
     val professionalSummary: String = ""
 )
 
-@Entity(
-    tableName = "profile_experiences",
-    foreignKeys = [
-        ForeignKey(
-            entity = UserProfile::class,
-            parentColumns = ["id"],
-            childColumns = ["profileId"],
-            onDelete = ForeignKey.CASCADE
-        )
-    ],
-    indices = [Index("profileId")]
-)
 data class ProfileExperience(
-    @PrimaryKey
     val id: String,
     val profileId: String = "CURRENT_USER",
     val role: String,
@@ -78,20 +56,7 @@ data class ProfileExperience(
     val location: String
 )
 
-@Entity(
-    tableName = "profile_works",
-    foreignKeys = [
-        ForeignKey(
-            entity = UserProfile::class,
-            parentColumns = ["id"],
-            childColumns = ["profileId"],
-            onDelete = ForeignKey.CASCADE
-        )
-    ],
-    indices = [Index("profileId")]
-)
 data class ProfileWork(
-    @PrimaryKey
     val id: String,
     val profileId: String = "CURRENT_USER",
     val title: String,
@@ -99,16 +64,17 @@ data class ProfileWork(
     val isWebLink: Boolean
 )
 
+data class ProfileDocumentLink(
+    val id: String,
+    val fieldKey: String, // e.g., "casteCertificateNumber", "familyIncome"
+    val walletCardId: String? = null,
+    val attachmentId: String? = null,
+    val displayName: String = ""
+)
+
 data class UserProfileWithDetails(
-    @Embedded val profile: UserProfile,
-    @Relation(
-        parentColumn = "id",
-        entityColumn = "profileId"
-    )
+    val profile: UserProfile,
     val experiences: List<ProfileExperience>,
-    @Relation(
-        parentColumn = "id",
-        entityColumn = "profileId"
-    )
-    val works: List<ProfileWork>
+    val works: List<ProfileWork>,
+    val documents: List<ProfileDocumentLink> = emptyList()
 )

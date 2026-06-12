@@ -13,6 +13,9 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -21,6 +24,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ArrowBack
@@ -33,6 +37,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.unit.dp
 import coil.compose.rememberAsyncImagePainter
 import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
@@ -165,12 +171,34 @@ fun ScannerCaptureScreen(onBack: () -> Unit, docViewModel: DocumentViewModel, sc
         }
     }
 
+    var showMultiEditor by remember { mutableStateOf(false) }
+
     if (showCustomScanner) {
         CustomCameraScannerScreen(
             onBack = { showCustomScanner = false },
-            onImagesCaptured = { uris ->
+            onImagesCaptured = { uris, isAutoMode ->
                 scannedUris = scannedUris + uris
                 showCustomScanner = false
+                if (!isAutoMode) {
+                    showMultiEditor = true
+                }
+            }
+        )
+        return
+    }
+    
+    if (showMultiEditor && scannedUris.isNotEmpty()) {
+        ScannedPageMultiEditorScreen(
+            initialUris = scannedUris,
+            initialIndex = 0,
+            onDismiss = { showMultiEditor = false },
+            onSaveAll = { newUris ->
+                scannedUris = newUris
+                showMultiEditor = false
+                
+                val array = org.json.JSONArray()
+                scannedUris.forEach { array.put(it.toString()) }
+                prefs.edit().putString("draft_uris", array.toString()).apply()
             }
         )
         return
@@ -180,23 +208,23 @@ fun ScannerCaptureScreen(onBack: () -> Unit, docViewModel: DocumentViewModel, sc
     var enableOcr by remember { mutableStateOf(false) }
     var compressionLevel by remember { mutableStateOf(0f) } // 0=Low, 1=Med, 2=High
     
-    val totalRawBytes = remember(scannedUris) {
-        scannedUris.sumOf { uri -> File(uri.path!!).length() }
-    }
-    
-    val estimatedSizeText by remember(totalRawBytes, compressionLevel) {
-        androidx.compose.runtime.derivedStateOf {
-            if (totalRawBytes == 0L) ""
-            else {
-                val rawMb = totalRawBytes / (1024f * 1024f)
-                val ratio = when (compressionLevel.toInt()) {
-                    0 -> 1.0f    // Low Compression
-                    1 -> 0.6f    // Med Compression
-                    else -> 0.3f // High Compression
-                }
-                "Estimated Size: ~%.2f MB".format(rawMb * ratio)
-            }
+    var isCalculatingSize by remember { mutableStateOf(false) }
+    var estimatedSizeText by remember { mutableStateOf("") }
+
+    LaunchedEffect(scannedUris, compressionLevel) {
+        if (scannedUris.isEmpty()) {
+            estimatedSizeText = ""
+            return@LaunchedEffect
         }
+        isCalculatingSize = true
+        kotlinx.coroutines.delay(300) // Debounce/simulate processing
+        val totalRawBytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            scannedUris.sumOf { uri -> java.io.File(uri.path!!).length() }
+        }
+        val rawMb = totalRawBytes / (1024f * 1024f)
+        val ratio = 1.0f - (compressionLevel / 2f) * 0.7f
+        estimatedSizeText = "Estimated Size: ~%.2f MB".format(rawMb * ratio)
+        isCalculatingSize = false
     }
     
     val paperSizes = listOf("A4", "A3", "Legal", "Letter", "Custom (1000x1000)")
@@ -284,98 +312,99 @@ fun ScannerCaptureScreen(onBack: () -> Unit, docViewModel: DocumentViewModel, sc
                 var editorUri by remember { mutableStateOf<Uri?>(null) }
 
                 if (editorUri != null) {
-                    ScannedPageEditorScreen(
-                        uri = editorUri!!,
-                        initialFilter = "Original",
+                    ScannedPageMultiEditorScreen(
+                        initialUris = scannedUris,
+                        initialIndex = scannedUris.indexOf(editorUri).coerceAtLeast(0),
                         onDismiss = { editorUri = null },
-                        onSave = { newUri, _ ->
-                            val index = scannedUris.indexOf(editorUri!!)
-                            if (index != -1) {
-                                val updated = scannedUris.toMutableList()
-                                updated[index] = newUri
-                                scannedUris = updated
-                            }
+                        onSaveAll = { newUris ->
+                            scannedUris = newUris
                             editorUri = null
+                            
+                            val array = org.json.JSONArray()
+                            scannedUris.forEach { array.put(it.toString()) }
+                            prefs.edit().putString("draft_uris", array.toString()).apply()
                         }
                     )
                 } else {
-                    LazyRow(
-                    modifier = Modifier.weight(0.3f).fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    itemsIndexed(scannedUris) { index, uri ->
-                        Box(
-                            modifier = Modifier
-                                .fillMaxHeight()
-                                .aspectRatio(0.7f)
-                                .background(Color.Black)
-                        ) {
-                            Image(
-                                painter = rememberAsyncImagePainter(uri),
-                                contentDescription = "Scanned Page",
-                                contentScale = ContentScale.Fit,
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(minSize = 120.dp),
+                        modifier = Modifier.weight(0.4f).fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        itemsIndexed(scannedUris) { index, uri ->
+                            Box(
                                 modifier = Modifier
-                                    .fillMaxSize()
-                                    .clickable { editorUri = uri }
-                            )
-                            
-                            // Reordering arrows
-                            Row(
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .padding(4.dp)
-                                    .background(Color.Black.copy(alpha = 0.5f))
+                                    .fillMaxWidth()
+                                    .aspectRatio(0.7f)
+                                    .background(Color.Black, RoundedCornerShape(8.dp))
+                                    .clip(RoundedCornerShape(8.dp))
                             ) {
-                                if (index > 0) {
-                                    IconButton(
-                                        onClick = { 
-                                            val mList = scannedUris.toMutableList()
-                                            java.util.Collections.swap(mList, index, index - 1)
-                                            scannedUris = mList
-                                        },
-                                        modifier = Modifier.size(32.dp)
-                                    ) { Icon(Icons.Default.ArrowBack, "", tint = Color.White) }
+                                Image(
+                                    painter = rememberAsyncImagePainter(uri),
+                                    contentDescription = "Scanned Page",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clickable { editorUri = uri }
+                                )
+                                
+                                // Reordering arrows
+                                Row(
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .background(Color.Black.copy(alpha = 0.5f))
+                                ) {
+                                    if (index > 0) {
+                                        IconButton(
+                                            onClick = { 
+                                                val mList = scannedUris.toMutableList()
+                                                java.util.Collections.swap(mList, index, index - 1)
+                                                scannedUris = mList
+                                            },
+                                            modifier = Modifier.size(32.dp)
+                                        ) { Icon(Icons.Default.ArrowBack, "", tint = Color.White, modifier = Modifier.size(16.dp)) }
+                                    }
+                                    if (index < scannedUris.size - 1) {
+                                        IconButton(
+                                            onClick = {
+                                                val mList = scannedUris.toMutableList()
+                                                java.util.Collections.swap(mList, index, index + 1)
+                                                scannedUris = mList
+                                            },
+                                            modifier = Modifier.size(32.dp)
+                                        ) { Icon(Icons.Default.ArrowForward, "", tint = Color.White, modifier = Modifier.size(16.dp)) }
+                                    }
                                 }
-                                if (index < scannedUris.size - 1) {
-                                    IconButton(
-                                        onClick = {
-                                            val mList = scannedUris.toMutableList()
-                                            java.util.Collections.swap(mList, index, index + 1)
-                                            scannedUris = mList
-                                        },
-                                        modifier = Modifier.size(32.dp)
-                                    ) { Icon(Icons.Default.ArrowForward, "", tint = Color.White) }
+                                
+                                // Delete button and page indicator
+                                Text(
+                                    "Page ${index + 1}", 
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier
+                                        .align(Alignment.BottomStart)
+                                        .background(Color.Black.copy(alpha = 0.5f))
+                                        .padding(4.dp)
+                                )
+                                IconButton(
+                                    onClick = { 
+                                        scannedUris = scannedUris.filterIndexed { i, _ -> i != index }
+                                    },
+                                    modifier = Modifier
+                                        .align(Alignment.TopStart)
+                                        .background(Color.Black.copy(alpha = 0.5f))
+                                        .size(32.dp)
+                                ) {
+                                    Icon(Icons.Default.Delete, "", tint = Color.Red, modifier = Modifier.size(16.dp))
                                 }
-                            }
-                            
-                            // Delete button and page indicator
-                            Text(
-                                "Page ${index + 1}", 
-                                color = Color.White, 
-                                modifier = Modifier
-                                    .align(Alignment.BottomStart)
-                                    .padding(4.dp)
-                                    .background(Color.Black.copy(alpha = 0.5f))
-                            )
-                            IconButton(
-                                onClick = { 
-                                    scannedUris = scannedUris.filterIndexed { i, _ -> i != index }
-                                },
-                                modifier = Modifier
-                                    .align(Alignment.TopStart)
-                                    .padding(4.dp)
-                                    .background(Color.Black.copy(alpha = 0.5f))
-                                    .size(32.dp)
-                            ) {
-                                Icon(Icons.Default.Delete, "", tint = Color.Red)
                             }
                         }
                     }
-                }
-                
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                LazyColumn(modifier = Modifier.weight(0.7f).fillMaxWidth()) {
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    LazyColumn(modifier = Modifier.weight(0.6f).fillMaxWidth()) {
                     item {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Button(onClick = { showCustomScanner = true }, modifier = Modifier.weight(1f)) {
@@ -389,146 +418,106 @@ fun ScannerCaptureScreen(onBack: () -> Unit, docViewModel: DocumentViewModel, sc
                         
                         Divider()
                         Spacer(modifier = Modifier.height(16.dp))
-                        Text("PDF Options", style = MaterialTheme.typography.titleMedium)
+                        Text("PDF Export Settings", style = MaterialTheme.typography.titleMedium)
+                        Spacer(modifier = Modifier.height(16.dp))
                         
-                        // Toggles
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = enableOcr, onCheckedChange = { enableOcr = it })
-                            Text("Extract Text (OCR)")
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("DPI", style = MaterialTheme.typography.labelSmall)
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                    modifier = Modifier.clickable {
+                                        val idx = dpiModes.indexOf(selectedDpi)
+                                        selectedDpi = dpiModes[(idx + 1) % dpiModes.size]
+                                    }
+                                ) {
+                                    Text(selectedDpi, modifier = Modifier.padding(8.dp).fillMaxWidth(), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
+                                }
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Paper", style = MaterialTheme.typography.labelSmall)
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                    modifier = Modifier.clickable {
+                                        val idx = paperSizes.indexOf(selectedSize)
+                                        selectedSize = paperSizes[(idx + 1) % paperSizes.size]
+                                    }
+                                ) {
+                                    Text(selectedSize, modifier = Modifier.padding(8.dp).fillMaxWidth(), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
+                                }
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Fit Mode", style = MaterialTheme.typography.labelSmall)
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                    modifier = Modifier.clickable {
+                                        val idx = fitModes.indexOf(selectedFit)
+                                        selectedFit = fitModes[(idx + 1) % fitModes.size]
+                                    }
+                                ) {
+                                    Text(selectedFit, modifier = Modifier.padding(8.dp).fillMaxWidth(), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
+                                }
+                            }
                         }
-                        Text("Compression Level", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1.5f)) {
+                                Text("Global Filter", style = MaterialTheme.typography.labelSmall)
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                    modifier = Modifier.clickable {
+                                        val idx = filterPresets.indexOf(selectedFilter)
+                                        selectedFilter = filterPresets[(idx + 1) % filterPresets.size]
+                                    }
+                                ) {
+                                    Text(selectedFilter, modifier = Modifier.padding(8.dp).fillMaxWidth(), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
+                                }
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = enableOcr, onCheckedChange = { enableOcr = it })
+                                Text("OCR Text", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text("Compression Level", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(bottom = 4.dp))
                         Slider(
                             value = compressionLevel,
                             onValueChange = { compressionLevel = it },
                             valueRange = 0f..2f,
-                            steps = 1
+                            modifier = Modifier.padding(horizontal = 16.dp)
                         )
-                        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Low", style = MaterialTheme.typography.bodySmall)
-                            Text("Med", style = MaterialTheme.typography.bodySmall)
-                            Text("High", style = MaterialTheme.typography.bodySmall)
+                        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Low", style = MaterialTheme.typography.labelSmall)
+                            Text("Max", style = MaterialTheme.typography.labelSmall)
                         }
-                        
-                        if (estimatedSizeText.isNotEmpty()) {
+                        if (isCalculatingSize) {
+                            Text(
+                                text = "Calculating Size...", 
+                                style = MaterialTheme.typography.bodySmall, 
+                                color = MaterialTheme.colorScheme.secondary, 
+                                modifier = Modifier.padding(top = 4.dp).align(Alignment.CenterHorizontally)
+                            )
+                        } else if (estimatedSizeText.isNotEmpty()) {
                             Text(
                                 text = estimatedSizeText, 
                                 style = MaterialTheme.typography.bodySmall, 
                                 color = MaterialTheme.colorScheme.secondary, 
-                                modifier = Modifier.padding(top = 8.dp)
+                                modifier = Modifier.padding(top = 4.dp).align(Alignment.CenterHorizontally)
                             )
                         }
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        // DPI Setting
-                        ExposedDropdownMenuBox(
-                            expanded = isDpiDropdownExpanded,
-                            onExpandedChange = { isDpiDropdownExpanded = it }
-                        ) {
-                            OutlinedTextField(
-                                value = selectedDpi,
-                                onValueChange = {},
-                                readOnly = true,
-                                label = { Text("Resolution (DPI)") },
-                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isDpiDropdownExpanded) },
-                                modifier = Modifier.menuAnchor().fillMaxWidth()
-                            )
-                            ExposedDropdownMenu(
-                                expanded = isDpiDropdownExpanded,
-                                onDismissRequest = { isDpiDropdownExpanded = false }
-                            ) {
-                                dpiModes.forEach { sz ->
-                                    DropdownMenuItem(
-                                        text = { Text(sz) },
-                                        onClick = { selectedDpi = sz; isDpiDropdownExpanded = false }
-                                    )
-                                }
-                            }
-                        }
-                        
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        // Filter Preset
-                        ExposedDropdownMenuBox(
-                            expanded = isFilterDropdownExpanded,
-                            onExpandedChange = { isFilterDropdownExpanded = it }
-                        ) {
-                            OutlinedTextField(
-                                value = selectedFilter,
-                                onValueChange = {},
-                                readOnly = true,
-                                label = { Text("Filter Preset") },
-                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isFilterDropdownExpanded) },
-                                modifier = Modifier.menuAnchor().fillMaxWidth()
-                            )
-                            ExposedDropdownMenu(
-                                expanded = isFilterDropdownExpanded,
-                                onDismissRequest = { isFilterDropdownExpanded = false }
-                            ) {
-                                filterPresets.forEach { f ->
-                                    DropdownMenuItem(
-                                        text = { Text(f) },
-                                        onClick = { selectedFilter = f; isFilterDropdownExpanded = false }
-                                    )
-                                }
-                            }
-                        }
-                        
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        // Paper Size
-                        ExposedDropdownMenuBox(
-                            expanded = isSizeDropdownExpanded,
-                            onExpandedChange = { isSizeDropdownExpanded = it }
-                        ) {
-                            OutlinedTextField(
-                                value = selectedSize,
-                                onValueChange = {},
-                                readOnly = true,
-                                label = { Text("Paper Size") },
-                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isSizeDropdownExpanded) },
-                                modifier = Modifier.menuAnchor().fillMaxWidth()
-                            )
-                            ExposedDropdownMenu(
-                                expanded = isSizeDropdownExpanded,
-                                onDismissRequest = { isSizeDropdownExpanded = false }
-                            ) {
-                                paperSizes.forEach { sz ->
-                                    DropdownMenuItem(
-                                        text = { Text(sz) },
-                                        onClick = { selectedSize = sz; isSizeDropdownExpanded = false }
-                                    )
-                                }
-                            }
-                        }
-                        
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        // Fit Mode
-                        ExposedDropdownMenuBox(
-                            expanded = isFitDropdownExpanded,
-                            onExpandedChange = { isFitDropdownExpanded = it }
-                        ) {
-                            OutlinedTextField(
-                                value = selectedFit,
-                                onValueChange = {},
-                                readOnly = true,
-                                label = { Text("Fit Mode") },
-                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = isFitDropdownExpanded) },
-                                modifier = Modifier.menuAnchor().fillMaxWidth()
-                            )
-                            ExposedDropdownMenu(
-                                expanded = isFitDropdownExpanded,
-                                onDismissRequest = { isFitDropdownExpanded = false }
-                            ) {
-                                fitModes.forEach { f ->
-                                    DropdownMenuItem(
-                                        text = { Text(f) },
-                                        onClick = { selectedFit = f; isFitDropdownExpanded = false }
-                                    )
-                                }
-                            }
-                        }
-                        
                         Spacer(modifier = Modifier.height(32.dp))
                         
                         Button(

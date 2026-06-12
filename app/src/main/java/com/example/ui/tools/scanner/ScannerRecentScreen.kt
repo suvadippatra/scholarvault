@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.MoreVert
@@ -63,10 +64,41 @@ fun ScannerRecentScreen(
         }
     }
 
+    val prefs = context.getSharedPreferences("scanner_draft", android.content.Context.MODE_PRIVATE)
+    var draftUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
+
+    LaunchedEffect(Unit) {
+        val savedDraftStr = prefs.getString("draft_uris", null)
+        if (savedDraftStr != null) {
+            try {
+                val array = org.json.JSONArray(savedDraftStr)
+                val uris = (0 until array.length()).map { Uri.parse(array.getString(it)) }
+                draftUris = uris
+            } catch (e: Exception) {}
+        }
+    }
+
+    val draftItem = remember(draftUris) {
+        if (draftUris.isNotEmpty()) {
+            ScannedDocumentEntity(
+                id = "draft_item",
+                name = "Unsaved Draft",
+                pagePaths = "[]",
+                timestamp = java.util.Date(),
+            )
+        } else null
+    }
+
+    val displayScans = remember(filteredScans, draftItem) {
+        if (draftItem != null && searchQuery.isBlank()) {
+            listOf(draftItem) + filteredScans
+        } else filteredScans
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Recent Scans") },
+                title = { Text("Document Scanner") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
@@ -120,7 +152,7 @@ fun ScannerRecentScreen(
                 )
             }
             
-            if (filteredScans.isEmpty()) {
+            if (displayScans.isEmpty()) {
                 Box(
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                     contentAlignment = Alignment.Center
@@ -136,17 +168,40 @@ fun ScannerRecentScreen(
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        items(filteredScans) { scan ->
-                            RecentScanCard(
-                                scan = scan,
-                                isGrid = true,
-                                onDelete = { scannerViewModel.deleteScan(scan) },
-                                onShare = { shareScan(context, scan) },
-                                onClick = { handleScanClick(scan, onNavigateToViewer) },
-                                onUpdateScan = { updatedScan -> scannerViewModel.updateScan(updatedScan) },
-                                onDownload = { downloadScan(context, scan) },
-                                onSaveToVault = { saveToVaultScan(context, coroutineScope, docViewModel, scan) }
-                            )
+                        items(displayScans) { scan ->
+                            if (scan.id == "draft_item") {
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .aspectRatio(0.7f)
+                                        .clickable { onNavigateToViewer("document_scanner_capture") },
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.fillMaxSize(),
+                                        verticalArrangement = Arrangement.Center,
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Icon(Icons.Default.Edit, contentDescription = "Draft", tint = MaterialTheme.colorScheme.onTertiaryContainer, modifier = Modifier.size(48.dp))
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        Text("Unsaved Draft", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                                        Text("${draftUris.size} pages pending", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Icon(Icons.Default.ArrowForward, contentDescription = "Resume", tint = MaterialTheme.colorScheme.onTertiaryContainer)
+                                    }
+                                }
+                            } else {
+                                RecentScanCard(
+                                    scan = scan,
+                                    isGrid = true,
+                                    onDelete = { scannerViewModel.deleteScan(scan) },
+                                    onShare = { shareScan(context, scan) },
+                                    onClick = { handleScanClick(scan, onNavigateToViewer) },
+                                    onUpdateScan = { updatedScan -> scannerViewModel.updateScan(updatedScan) },
+                                    onDownload = { downloadScan(context, scan) },
+                                    onSaveToVault = { saveToVaultScan(context, coroutineScope, docViewModel, scan) }
+                                )
+                            }
                         }
                     }
                 } else {
@@ -155,17 +210,39 @@ fun ScannerRecentScreen(
                         contentPadding = PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        items(filteredScans) { scan ->
-                            RecentScanCard(
-                                scan = scan,
-                                isGrid = false,
-                                onDelete = { scannerViewModel.deleteScan(scan) },
-                                onShare = { shareScan(context, scan) },
-                                onClick = { handleScanClick(scan, onNavigateToViewer) },
-                                onUpdateScan = { updatedScan -> scannerViewModel.updateScan(updatedScan) },
-                                onDownload = { downloadScan(context, scan) },
-                                onSaveToVault = { saveToVaultScan(context, coroutineScope, docViewModel, scan) }
-                            )
+                        items(displayScans) { scan ->
+                            if (scan.id == "draft_item") {
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onNavigateToViewer("document_scanner_capture") },
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.Edit, contentDescription = "Draft", tint = MaterialTheme.colorScheme.onTertiaryContainer)
+                                        Spacer(modifier = Modifier.width(16.dp))
+                                        Column(Modifier.weight(1f)) {
+                                            Text("Unsaved Draft", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                                            Text("${draftUris.size} pages pending. Tap to resume.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                                        }
+                                        Icon(Icons.Default.ArrowForward, contentDescription = "Resume", tint = MaterialTheme.colorScheme.onTertiaryContainer)
+                                    }
+                                }
+                            } else {
+                                RecentScanCard(
+                                    scan = scan,
+                                    isGrid = false,
+                                    onDelete = { scannerViewModel.deleteScan(scan) },
+                                    onShare = { shareScan(context, scan) },
+                                    onClick = { handleScanClick(scan, onNavigateToViewer) },
+                                    onUpdateScan = { updatedScan -> scannerViewModel.updateScan(updatedScan) },
+                                    onDownload = { downloadScan(context, scan) },
+                                    onSaveToVault = { saveToVaultScan(context, coroutineScope, docViewModel, scan) }
+                                )
+                            }
                         }
                     }
                 }
@@ -291,8 +368,9 @@ private fun handleScanClick(scan: ScannedDocumentEntity, onNavigateToViewer: (St
         if (filePaths.length() > 0) {
             val firstFile = filePaths.getString(0)
             if (firstFile.endsWith(".pdf", ignoreCase = true)) {
-                val encodePath = Uri.encode(firstFile)
-                onNavigateToViewer("viewer/pdf/$encodePath/${Uri.encode(scan.name)}")
+                val encodePath = android.util.Base64.encodeToString(firstFile.toByteArray(), android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP)
+                val encodeName = android.util.Base64.encodeToString(scan.name.toByteArray(), android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP)
+                onNavigateToViewer("viewer/pdf/$encodePath/$encodeName")
             } else {
                 onNavigateToViewer("document_scanner_capture/${scan.id}")
             }

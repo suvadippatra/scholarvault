@@ -69,12 +69,15 @@ fun ToolsScreen(onOpenDrawer: () -> Unit = {}, onNavigate: (String) -> Unit = {}
     Column(modifier = Modifier.fillMaxSize()) {
         TopSearchBar(onOpenDrawer = onOpenDrawer, onNavigate = onNavigate)
         
+        val columns = if (isTablet) 3 else 2
         LazyVerticalGrid(
-            columns = GridCells.Fixed(1),
+            columns = GridCells.Fixed(columns),
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 120.dp)
+            contentPadding = PaddingValues(bottom = 160.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            item {
+            item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
                         text = "Smart Toolkit",
@@ -91,7 +94,30 @@ fun ToolsScreen(onOpenDrawer: () -> Unit = {}, onNavigate: (String) -> Unit = {}
                 }
             }
             
-            item {
+            item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                val context = androidx.compose.ui.platform.LocalContext.current
+                val prefs = remember { context.getSharedPreferences("scanner_draft", android.content.Context.MODE_PRIVATE) }
+                val hasDraft = prefs.getString("draft_uris", null)?.let { org.json.JSONArray(it).length() > 0 } == true
+                
+                if (hasDraft) {
+                    ElevatedCard(
+                        onClick = { onNavigate(Screen.DocumentScanner.route) },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
+                    ) {
+                        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.DocumentScanner, contentDescription = null, tint = MaterialTheme.colorScheme.onTertiaryContainer)
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Column {
+                                Text("Resume Document Scan", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                                Text("You have an unsaved draft session.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f))
+                            }
+                        }
+                    }
+                }
+            }
+            
+            item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
                 LazyRow(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
                     contentPadding = PaddingValues(horizontal = 16.dp),
@@ -109,24 +135,14 @@ fun ToolsScreen(onOpenDrawer: () -> Unit = {}, onNavigate: (String) -> Unit = {}
                 }
             }
             
-            item {
-                // Multi-column grid based on screen size
-                val columns = if (isTablet) 3 else 2
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(columns),
-                    modifier = Modifier.heightIn(max = 2000.dp).padding(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    userScrollEnabled = false 
-                ) {
-                    items(filteredTools.size) { index ->
-                        val tool = filteredTools[index]
-                        ToolCard(tool) {
-                            if (tool.route == "quick_note_widget") {
-                                com.scholarvault.ui.tools.SharedData.isQuickNoteWidgetVisible.value = true
-                            } else if (tool.route.isNotEmpty()) {
-                                onNavigate(tool.route)
-                            }
+            items(filteredTools.size) { index ->
+                val tool = filteredTools[index]
+                Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    ToolCard(tool) {
+                        if (tool.route == "quick_note_widget") {
+                            com.scholarvault.ui.tools.SharedData.isQuickNoteWidgetVisible.value = true
+                        } else if (tool.route.isNotEmpty()) {
+                            onNavigate(tool.route)
                         }
                     }
                 }

@@ -48,6 +48,8 @@ import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.foundation.Canvas
 import androidx.compose.material.icons.filled.FormatQuote
 import androidx.compose.material.icons.filled.Badge
+import androidx.compose.material.icons.filled.DocumentScanner
+import androidx.compose.material.icons.filled.ArrowForward
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.scholarvault.ui.theme.LocalThemeController
 import com.scholarvault.ui.viewmodel.DashboardViewModel
@@ -190,6 +192,39 @@ fun DashboardScreen(
                 item {
                     GreetingSection(pureFirstName, nextReminder)
                 }
+
+                val prefs = context.getSharedPreferences("scanner_draft", android.content.Context.MODE_PRIVATE)
+                val draftStr = prefs.getString("draft_uris", null)
+                val draftCount = try {
+                    if (draftStr != null) org.json.JSONArray(draftStr).length() else 0
+                } catch(e: Exception) { 0 }
+
+                if (draftCount > 0) {
+                    item {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onNavigate("document_scanner_capture") },
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.DocumentScanner, contentDescription = "Drafts", tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("You have an unsaved draft", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                                    Text("$draftCount pages pending. Tap to resume.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                                }
+                                Icon(Icons.Default.ArrowForward, contentDescription = "Resume", tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                            }
+                        }
+                    }
+                }
+
                 item {
                     QuoteCard(quote)
                 }

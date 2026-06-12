@@ -725,7 +725,7 @@ fun CustomPdfViewer(
                                                                     try {
                                                                         val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
                                                                             val uri = if (isExternalUri) android.net.Uri.parse(filePath) else {
-                                                                                val f = java.io.File(filePath)
+                                                                                val f = java.io.File(context.filesDir, filePath)
                                                                                 androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", f)
                                                                             }
                                                                             setDataAndType(uri, "application/pdf")
@@ -744,7 +744,7 @@ fun CustomPdfViewer(
                                                                     viewModel.runBackgroundTask(context, "Share PDF") {
                                                                         val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                                                                             type = "application/pdf"
-                                                                            val uri = if (isExternalUri) android.net.Uri.parse(filePath) else androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", java.io.File(filePath))
+                                                                            val uri = if (isExternalUri) android.net.Uri.parse(filePath) else androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", java.io.File(context.filesDir, filePath))
                                                                             putExtra(android.content.Intent.EXTRA_STREAM, uri)
                                                                             addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                                                         }
@@ -760,7 +760,7 @@ fun CustomPdfViewer(
                                                                 onClick = {
                                                                     scope.launch {
                                                                         try {
-                                                                            val uri = if (isExternalUri) android.net.Uri.parse(filePath) else android.net.Uri.fromFile(java.io.File(filePath))
+                                                                            val uri = if (isExternalUri) android.net.Uri.parse(filePath) else androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", java.io.File(context.filesDir, filePath))
                                                                             com.scholarvault.ui.tools.SharedData.pendingUris.value = com.scholarvault.ui.tools.SharedData.pendingUris.value + uri
                                                                             com.scholarvault.ui.tools.SharedData.navigateToPrePrint.value = true
                                                                             android.widget.Toast.makeText(context, "Added to print queue.", android.widget.Toast.LENGTH_SHORT).show()

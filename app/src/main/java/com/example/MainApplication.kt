@@ -162,6 +162,14 @@ class MainApplication : Application() {
         }
     }
 
+    val MIGRATION_19_20 = object : Migration(19, 20) {
+        override fun migrate(database: SupportSQLiteDatabase) {
+            database.execSQL("DROP TABLE IF EXISTS `user_profile`")
+            database.execSQL("DROP TABLE IF EXISTS `profile_experiences`")
+            database.execSQL("DROP TABLE IF EXISTS `profile_works`")
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         try {
@@ -173,7 +181,7 @@ class MainApplication : Application() {
             this,
             AppDatabase::class.java, "scholar-vault-db"
         )
-        .addMigrations(MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19)
+        .addMigrations(MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
         .fallbackToDestructiveMigration(false)
         .build()
 
